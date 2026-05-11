@@ -16,9 +16,10 @@ framework.
 
 ## Proposal
 
-The candidate's accepted proposal is committed at the repo root as
-`proposal.pdf`. Treat it as the source of truth for scope and weekly
-goals; quote section anchors when filing issues.
+The candidate's accepted proposal is the authoritative source for scope
+and weekly goals. The PDF is shared privately with the student and
+mentor (not committed to this public repo). Quote relevant excerpts in
+issues and discussions when needed.
 
 ## Milestones
 
