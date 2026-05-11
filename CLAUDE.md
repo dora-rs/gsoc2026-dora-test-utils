@@ -6,8 +6,9 @@ framework.
 
 ## Student
 
-- handle: TBD-fill-in
-- weekly_slot: TBD-fill-in (e.g. "Tuesdays 09:00 PT")
+- handle: SunSunSun689
+- weekly_slot: Sundays 19:30-20:00 America/Los_Angeles
+- student_fork: https://github.com/SunSunSun689/gsoc2026-dora-test-utils
 
 ## Mentor
 
