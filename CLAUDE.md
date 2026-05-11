@@ -22,12 +22,10 @@ goals; quote section anchors when filing issues.
 
 ## Milestones
 
-- `Community Bonding` — May–Jun 2026
-- `Coding Phase 1` — Jun–Jul 2026 (ends at midterm eval)
-- `Coding Phase 2` — Jul–Aug 2026
-- `Final Submission` — Aug–Sep 2026
-
-Exact end-dates filled in from Google's published 2026 timeline.
+- `Community Bonding` — ends 2026-05-24 23:59 UTC
+- `Coding Phase 1` — ends 2026-07-10 23:59 UTC (Midterm evaluation deadline)
+- `Coding Phase 2` — ends 2026-08-24 23:59 UTC
+- `Final Submission` — standard 2026-08-24 23:59 UTC; extension to 2026-11-02 in approved cases.
 
 ## Workflow
 
