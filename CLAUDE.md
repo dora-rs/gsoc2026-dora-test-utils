@@ -22,6 +22,11 @@ goals; quote section anchors when filing issues.
 ## Milestones
 
 - `Community Bonding` — May–Jun 2026
+  - [x] Week 1–2: Design NodeHarness API + scaffold crate (see [PROGRESS.md](PROGRESS.md))
+  - [ ] Week 3–5: Implement NodeHarness, MockEventStream, MockOutputSender
+  - [ ] Week 6–8: Implement TestSourceNode / TestSinkNode binaries
+  - [ ] Week 9–10: Example pipelines + integration tests
+  - [ ] Week 11–12: Polish docs, mentor feedback
 - `Coding Phase 1` — Jun–Jul 2026 (ends at midterm eval)
 - `Coding Phase 2` — Jul–Aug 2026
 - `Final Submission` — Aug–Sep 2026
