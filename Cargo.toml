@@ -5,7 +5,7 @@ edition = "2021"
 description = "Testing utility library for the DORA framework — unit testing and integration testing support"
 license = "Apache-2.0"
 repository = "https://github.com/dora-rs/dora-test-utils"
-authors = ["GSoC 2026 participant"]
+authors = ["SunSunSun689"]
 
 [dependencies]
 # DORA node API — the primary integration surface.
