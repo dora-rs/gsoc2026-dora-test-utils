@@ -94,7 +94,10 @@ impl NodeHarness {
     /// `tick()` (or since construction).
     ///
     /// Returns `None` if no output with that ID was produced.
-    pub fn recv_output<O: Into<String>>(&mut self, _output_id: O) -> Option<Vec<arrow::array::ArrayData>> {
+    pub fn recv_output<O: Into<String>>(
+        &mut self,
+        _output_id: O,
+    ) -> Option<Vec<arrow::array::ArrayData>> {
         todo!("recv_output — will drain the output channel for the given id")
     }
 

@@ -41,4 +41,4 @@ pub mod mock;
 // Re-export the key types for convenience.
 pub use harness::NodeHarness;
 pub use mock::event_stream::MockEventStream;
-pub use mock::output::MockOutputSender;
+pub use mock::output::{MockOutputSender, OutputCollector};

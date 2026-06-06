@@ -9,14 +9,18 @@ authors = ["SunSunSun689"]
 
 [dependencies]
 # DORA node API — the primary integration surface.
-# Pinned to a git rev once the API surface we depend on stabilizes.
-# dora-node-api = { git = "https://github.com/dora-rs/dora", rev = "..." }
+# Using main branch; will pin to specific commit after mentor confirmation.
+dora-node-api = { git = "https://github.com/dora-rs/dora", branch = "main" }
 
 # Arrow: DORA uses Arrow arrays for inter-node data.
-arrow = "53"
+# Using 58 to match latest DORA main (which has upgraded from 53).
+arrow = "58"
 
 # Tokio: async runtime used by DORA and our harness.
 tokio = { version = "1", features = ["sync", "macros", "rt"] }
+
+# Futures: Stream trait for EventStream compatibility.
+futures = "0.3"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
