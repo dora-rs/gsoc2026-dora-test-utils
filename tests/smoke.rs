@@ -4,8 +4,8 @@
 //! composed.  They don't yet exercise the internal logic, which depends
 //! on wiring up real DORA types (pending the dora-node-api dependency).
 
-use dora_test_utils::mock::output::MockOutputSender;
 use dora_test_utils::mock::event_stream::MockEventStream;
+use dora_test_utils::mock::output::MockOutputSender;
 use dora_test_utils::NodeHarness;
 
 /// `NodeHarness` should be constructable via `new()` and `Default`.
