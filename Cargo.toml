@@ -9,8 +9,8 @@ authors = ["SunSunSun689"]
 
 [dependencies]
 # DORA node API — the primary integration surface.
-# Using main branch; will pin to specific commit after mentor confirmation.
-dora-node-api = { git = "https://github.com/dora-rs/dora", branch = "main" }
+# Pinned to commit 45436aad (2026-06-07 snapshot).
+dora-node-api = { git = "https://github.com/dora-rs/dora", rev = "45436aad" }
 
 # Arrow: DORA uses Arrow arrays for inter-node data.
 # Using 58 to match latest DORA main (which has upgraded from 53).

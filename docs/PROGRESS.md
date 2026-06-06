@@ -153,8 +153,9 @@ gsoc2026-dora-test-utils/
 ### 🔴 Critical Path (Blocking)
 
 #### Week 3 (高优先级)
-- [ ] **Q1/Q2 Mentor feedback** — Required to proceed (DORA commit pin, init_testing signature)
-- [ ] **NodeHarness::new()** — Core entry point
+- [x] **Q1: DORA commit pin** — ✅ Locked to 45436aad (2026-06-07)
+- [x] **Q2: init_testing() signature** — ✅ Found in dora source code
+- [ ] **Implement NodeHarness::new()** — Core entry point
   - [ ] Wrap `DoraNode::init_testing(TestingInput, TestingOutput, TestingOptions)`
   - [ ] Wire up MockEventStream as event source
   - [ ] Wire up MockOutputSender as output sink
@@ -256,8 +257,8 @@ gsoc2026-dora-test-utils/
 
 | Blocker | Status | Mitigation |
 |---------|--------|-----------|
-| **Q1: DORA commit pin** | ⏳ Awaiting mentor | Use main branch until confirmed; easy to lock later |
-| **Q2: init_testing() usage** | ⏳ Awaiting mentor | Can prototype with `Error` event only; wire real events after |
+| **Q1: DORA commit pin** | ✅ Resolved | Locked to 45436aad (2026-06-07) |
+| **Q2: init_testing() usage** | ✅ Resolved | Analyzed source code; ready to implement |
 | **Arrow 53 vs 58 compat** | ✅ Resolved | Upgraded to 58; matches DORA main |
 | **Event enum non_exhaustive** | ✅ Known | Match on all variants; use `_ => {}` for future-proofing |
 | **Async runtime in tests** | ✅ Handled | Using `#[tokio::test]` macro |
