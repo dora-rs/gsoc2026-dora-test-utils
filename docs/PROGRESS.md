@@ -145,3 +145,133 @@ gsoc2026-dora-test-utils/
 ├── LICENSE
 └── proposal.pdf
 ```
+
+---
+
+## 📋 TO DO (Prioritized by Week)
+
+### 🔴 Critical Path (Blocking)
+
+#### Week 3 (高优先级)
+- [ ] **Q1/Q2 Mentor feedback** — Required to proceed (DORA commit pin, init_testing signature)
+- [ ] **NodeHarness::new()** — Core entry point
+  - [ ] Wrap `DoraNode::init_testing(TestingInput, TestingOutput, TestingOptions)`
+  - [ ] Wire up MockEventStream as event source
+  - [ ] Wire up MockOutputSender as output sink
+  - [ ] Handle async runtime (tokio)
+- [ ] **NodeHarness::send_input()** — Inject test events
+  - [ ] Create Event::Input from user-provided ArrayData
+  - [ ] Push to MockEventStream mpsc channel
+  - [ ] Handle input_id validation
+- [ ] **NodeHarness::recv_output()** — Drain captured outputs
+  - [ ] Call OutputCollector::drain(output_id)
+  - [ ] Return Vec<ArrayData> or None
+- [ ] **NodeHarness::tick()** — Drive one iteration
+  - [ ] Poll node event loop once
+  - [ ] Collect any outputs via OutputCollector::collect_pending()
+- [ ] **End-to-end test** — Verify harness works
+  - [ ] Create node via harness
+  - [ ] Send synthetic Input event
+  - [ ] Call tick()
+  - [ ] Assert output received
+
+#### Week 4 (高优先级)
+- [ ] **NodeHarness::run_to_completion()** — Batch mode
+  - [ ] Loop tick() until input channel exhausted
+  - [ ] Break on Event::Stop
+  - [ ] Batch test scenario: 3 inputs → verify all outputs
+- [ ] **API Freeze** — Lock public signatures
+  - [ ] Review all public methods
+  - [ ] Document breaking-change policy for Week 5+
+
+#### Week 5 (中优先级)
+- [ ] **TestSourceNode binary** (`src/bin/test_source.rs`)
+  - [ ] Accept CLI args: `--output-id`, `--data-file` OR `--inline-data`
+  - [ ] Load Arrow JSON from file or parse inline JSON
+  - [ ] Spawn as DORA node in dataflow
+  - [ ] Emit loaded data on specified output
+  - [ ] Unit + integration tests
+- [ ] **TestSinkNode binary** (`src/bin/test_sink.rs`)
+  - [ ] Accept CLI args: `--expected-file`, `--fail-on-mismatch`
+  - [ ] Receive input from dataflow
+  - [ ] Compare with expected Arrow JSON (byte-for-byte or semantic)
+  - [ ] Write result file (`result.json` or similar)
+  - [ ] Exit code: 0 (match) / 1 (mismatch)
+  - [ ] Unit + integration tests
+
+### 🟡 Medium Priority (Non-blocking)
+
+#### Week 6–8 (中优先级)
+- [ ] **Source + Sink integration tests**
+  - [ ] 3-node dataflow: TestSource → Node → TestSink
+  - [ ] `dora run` end-to-end validation
+  - [ ] Multiple input/output scenarios
+  - [ ] Error propagation (source read error, sink comparison fail)
+
+#### Week 9–10 (低优先级)
+- [ ] **Example pipelines**
+  - [ ] Example 1: Single-node unit test with NodeHarness
+  - [ ] Example 2: Multi-node YAML + TestSource/Sink
+  - [ ] Example 3: Complex dataflow (fan-out, merging)
+  - [ ] CI integration: Run examples in workflow
+  - [ ] Docs: Each example with README + expected output
+
+#### Week 11–12 (低优先级)
+- [ ] **Documentation**
+  - [ ] API rustdoc (NodeHarness, MockEventStream, MockOutputSender, OutputCollector)
+  - [ ] Setup Guide (clone, build, first test)
+  - [ ] Usage Guide (unit testing, integration testing, regression testing)
+  - [ ] README polish: Quick start, feature matrix, limitations
+- [ ] **Mentor review + polish**
+  - [ ] Code review feedback integration
+  - [ ] Test coverage audit
+  - [ ] Mid-term evaluation prep
+
+### 🟢 Extended Scope (Post-MVP, 350h only)
+
+#### Week 13–14 (扩展功能)
+- [ ] **RecordSession** — Capture real dataflow I/O
+  - [ ] Intercept all inter-node messages
+  - [ ] Serialize to `integration_testing_format.rs` JSON
+  - [ ] Write to `tests/fixtures/run_*.json`
+
+#### Week 15–17 (扩展功能)
+- [ ] **ReplaySession** — Deterministic replay
+  - [ ] Load recorded session file
+  - [ ] Reinject events to node
+  - [ ] Collect outputs
+  - [ ] `assert_no_regression()` helper
+
+#### Week 18–20 (扩展功能)
+- [ ] **Python bindings** (PyO3)
+  - [ ] Expose NodeHarness to Python
+  - [ ] Test Python nodes via harness
+- [ ] **CI template** — GitHub Actions preset
+  - [ ] Example workflow: unit + integration + regression tests
+  - [ ] Reusable job templates
+
+---
+
+## 🚧 Blockers & Risks
+
+| Blocker | Status | Mitigation |
+|---------|--------|-----------|
+| **Q1: DORA commit pin** | ⏳ Awaiting mentor | Use main branch until confirmed; easy to lock later |
+| **Q2: init_testing() usage** | ⏳ Awaiting mentor | Can prototype with `Error` event only; wire real events after |
+| **Arrow 53 vs 58 compat** | ✅ Resolved | Upgraded to 58; matches DORA main |
+| **Event enum non_exhaustive** | ✅ Known | Match on all variants; use `_ => {}` for future-proofing |
+| **Async runtime in tests** | ✅ Handled | Using `#[tokio::test]` macro |
+
+---
+
+## 📊 Metrics & Checkpoints
+
+| Checkpoint | Target | Current | Status |
+|-----------|--------|---------|--------|
+| Week 1–2 API design | 7/7 deliverables | 7/7 | ✅ |
+| Week 2 Mock impl | 6 tests passing | 6 tests | ✅ (compiled, untested runtime) |
+| Week 3 NodeHarness core | 4 methods + E2E test | 0/5 | ⏳ |
+| Week 5 Binaries | TestSource + TestSink | 0/2 | ⏳ |
+| Week 11 Docs | API + Setup + Usage | 0/3 | ⏳ |
+| **Mid-term eval (Week 12)** | MVP complete | TBD | ⏳ |
+| **Final submission (Week 20)** | Extended complete | TBD | ⏳ |
