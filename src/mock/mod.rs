@@ -5,8 +5,8 @@
 //!
 //! | Real type | Role | Mock replacement |
 //! |---|---|---|
-//! | `EventStream` | Stream of incoming events | [`MockEventStream`] |
-//! | `send_output()` on `DoraNode` | Send outgoing data | [`MockOutputSender`] |
+//! | `EventStream` | Stream of incoming events | [`MockEventStream`](event_stream::MockEventStream) |
+//! | `send_output()` on `DoraNode` | Send outgoing data | [`MockOutputSender`](output::MockOutputSender) |
 //!
 //! The mocks implement the same trait(s) as the real types but
 //! substitute the daemon connection with [`tokio::sync::mpsc`]

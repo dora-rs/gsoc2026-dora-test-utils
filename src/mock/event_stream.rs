@@ -79,7 +79,9 @@ mod tests {
         assert!(stream.recv().await.is_some());
         assert!(stream.recv().await.is_some());
 
-        // Stream exhausted
+        // Stream exhausted — drop sender to close the channel,
+        // otherwise recv().await blocks forever.
+        drop(tx);
         assert!(stream.recv().await.is_none());
     }
 
@@ -101,7 +103,9 @@ mod tests {
         let e2 = stream.recv().await;
         assert!(e2.is_some());
 
-        // Both messages received
+        // Both messages received — drop all senders before checking None
+        drop(tx1);
+        drop(tx2);
         assert!(stream.recv().await.is_none());
     }
 }

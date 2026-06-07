@@ -775,7 +775,7 @@ dependencies = [
 [[package]]
 name = "dora-arrow-convert"
 version = "1.0.0-rc1"
-source = "git+https://github.com/dora-rs/dora?branch=main#6fe2f79a892cf40b2988451bd534ffa99a9d902b"
+source = "git+https://github.com/dora-rs/dora?rev=45436aad#45436aad124fe46463d0b0411e3922dae8ee9ebd"
 dependencies = [
  "arrow",
  "chrono",
@@ -787,7 +787,7 @@ dependencies = [
 [[package]]
 name = "dora-core"
 version = "1.0.0-rc1"
-source = "git+https://github.com/dora-rs/dora?branch=main#6fe2f79a892cf40b2988451bd534ffa99a9d902b"
+source = "git+https://github.com/dora-rs/dora?rev=45436aad#45436aad124fe46463d0b0411e3922dae8ee9ebd"
 dependencies = [
  "arrow-schema",
  "dora-message",
@@ -813,7 +813,7 @@ dependencies = [
 [[package]]
 name = "dora-message"
 version = "1.0.0-rc1"
-source = "git+https://github.com/dora-rs/dora?branch=main#6fe2f79a892cf40b2988451bd534ffa99a9d902b"
+source = "git+https://github.com/dora-rs/dora?rev=45436aad#45436aad124fe46463d0b0411e3922dae8ee9ebd"
 dependencies = [
  "aligned-vec",
  "arrow-data",
@@ -839,7 +839,7 @@ dependencies = [
 [[package]]
 name = "dora-metrics"
 version = "1.0.0-rc1"
-source = "git+https://github.com/dora-rs/dora?branch=main#6fe2f79a892cf40b2988451bd534ffa99a9d902b"
+source = "git+https://github.com/dora-rs/dora?rev=45436aad#45436aad124fe46463d0b0411e3922dae8ee9ebd"
 dependencies = [
  "eyre",
  "opentelemetry",
@@ -851,7 +851,7 @@ dependencies = [
 [[package]]
 name = "dora-node-api"
 version = "1.0.0-rc1"
-source = "git+https://github.com/dora-rs/dora?branch=main#6fe2f79a892cf40b2988451bd534ffa99a9d902b"
+source = "git+https://github.com/dora-rs/dora?rev=45436aad#45436aad124fe46463d0b0411e3922dae8ee9ebd"
 dependencies = [
  "aligned-vec",
  "arrow",
@@ -895,7 +895,7 @@ dependencies = [
 [[package]]
 name = "dora-tracing"
 version = "1.0.0-rc1"
-source = "git+https://github.com/dora-rs/dora?branch=main#6fe2f79a892cf40b2988451bd534ffa99a9d902b"
+source = "git+https://github.com/dora-rs/dora?rev=45436aad#45436aad124fe46463d0b0411e3922dae8ee9ebd"
 dependencies = [
  "eyre",
  "opentelemetry",
