@@ -182,7 +182,7 @@ impl NodeHarness {
     ) -> Result<(), NodeError> {
         let data_id = output_id
             .parse()
-            .map_err(|e| NodeError::Init(format!("invalid output_id '{output_id}': {e}")))?;
+            .map_err(|e| NodeError::Output(format!("invalid output_id '{output_id}': {e}")))?;
         self.node.send_output(data_id, Default::default(), data)
     }
 
