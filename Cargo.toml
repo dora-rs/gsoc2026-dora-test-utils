@@ -10,7 +10,9 @@ authors = ["SunSunSun689"]
 [dependencies]
 # DORA node API — the primary integration surface.
 # Pinned to commit 45436aad (2026-06-07 snapshot).
-dora-node-api = { git = "https://github.com/dora-rs/dora", rev = "45436aad" }
+# TEMPORARY: use local dora source for TestingInput::Channel development.
+# REVERT to git dependency before pushing!
+dora-node-api = { path = "dora/apis/rust/node" }
 
 # Arrow: DORA uses Arrow arrays for inter-node data.
 # Using 58 to match latest DORA main (which has upgraded from 53).
@@ -21,6 +23,15 @@ tokio = { version = "1", features = ["sync", "macros", "rt"] }
 
 # Futures: Stream trait for EventStream compatibility.
 futures = "0.3"
+
+# Flume: multi-producer single-consumer channel used by DORA's
+# TestingOutput::ToChannel for capturing real node outputs.
+# Pinned to match DORA's own flume version (0.10.14).
+flume = "0.10"
+
+# serde_json: DORA outputs are serialized as JSON maps in integration
+# testing mode; test code inspects them via serde_json::Value.
+serde_json = "1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }

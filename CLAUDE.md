@@ -15,9 +15,9 @@ framework.
 
 ## Proposal
 
-The candidate's accepted proposal is committed at the repo root as
-`proposal.pdf`. Treat it as the source of truth for scope and weekly
-goals; quote section anchors when filing issues.
+The candidate's accepted proposal is committed at `docs/proposal.pdf`.
+Treat it as the source of truth for scope and weekly goals; quote
+section anchors when filing issues.
 
 ## Milestones
 
