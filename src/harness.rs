@@ -165,6 +165,24 @@ impl NodeHarness {
         });
     }
 
+    /// Send an output from the node under test.
+    ///
+    /// Delegates to the underlying [`DoraNode::send_output`].  The output is
+    /// captured by [`TestingOutput::ToChannel`] and can be retrieved via
+    /// [`recv_output`](Self::recv_output).
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`NodeError`] if the underlying `send_output` call fails.
+    pub fn send_output(
+        &mut self,
+        output_id: &str,
+        data: impl arrow::array::Array,
+    ) -> Result<(), NodeError> {
+        self.node
+            .send_output(output_id.parse().unwrap(), Default::default(), data)
+    }
+
     /// Drive the node to process **one** event from the [`EventStream`].
     ///
     /// After the event is received, any outputs produced by the node
