@@ -10,7 +10,7 @@
 ### 1. Crate Scaffolded ✅
 - Created `dora-test-utils` v0.1.0 at repo root
 - `Cargo.toml` configured with key dependencies:
-  - `arrow = "53"` (matches DORA inter-node data format)
+  - `arrow = "58"` (matches DORA inter-node data format, upgraded from 53)
   - `tokio` for async mock channels
 - `Cargo.lock` committed for reproducibility
 - Cargo mirror configured (USTC) for faster downloads in China
@@ -22,11 +22,11 @@
 pub struct NodeHarness { ... }
 
 impl NodeHarness {
-    pub fn new() -> Self                           // Create harness with mock channels
-    pub fn send_input(&mut self, id: &str, data: ArrayData) -> Result<()>  // Inject input
-    pub fn tick(&mut self) -> Result<()>          // Drive one event loop iteration
-    pub fn recv_output(&mut self, id: &str) -> Vec<ArrayData>  // Drain outputs
-    pub async fn run_to_completion(&mut self) -> Result<()>    // Batch run until idle
+    pub fn new(events: Vec<TimedIncomingEvent>) -> Result<Self, NodeError>
+    pub fn send_input(&mut self, id: impl Into<String>, data: ArrayData)  // todo!() — pending mentor decision
+    pub async fn tick(&mut self) -> Option<Event>        // Drive one event loop iteration
+    pub fn recv_output(&mut self, id: impl Into<String>) -> Option<Vec<serde_json::Map<...>>>  // Drain outputs
+    pub async fn run_to_completion(&mut self)             // todo!() — Week 4
 }
 ```
 
@@ -50,7 +50,7 @@ impl MockOutputSender {
 }
 
 impl OutputCollector {
-    pub fn drain(&mut self, output_id: &str) -> Vec<ArrayData>
+    pub fn drain(&mut self, output_id: &str) -> Option<Vec<ArrayData>>
 }
 ```
 
@@ -99,7 +99,7 @@ Three compilation-level tests in `tests/smoke.rs`:
 | Decision | Rationale |
 |----------|-----------|
 | **Crate at repo root** (not `libraries/test-utils/`) | Standalone repo during GSoC; path aligns with dora monorepo structure only after upstream merge |
-| **arrow = "53"** | Matches Arrow version DORA uses for inter-node data interchange |
+| **arrow = "58"** | Matches Arrow version DORA uses for inter-node data interchange (upgraded from 53 in Week 2) |
 | **tokio + mpsc** | `mpsc` channels replace daemon socket; same async runtime as DORA core |
 | **Stub-only implementation** | Week 1–2 scope is API design + scaffolding; real impl starts Week 3 |
 | **dora-node-api NOT yet a dependency** | Need mentor confirmation of exact git rev / crate name before wiring up |
@@ -168,7 +168,7 @@ Three compilation-level tests in `tests/smoke.rs`:
 | **Crate LOC** | ~250 (stubs only) |
 | **Tests** | 3 passing smoke tests |
 | **API methods stubbed** | 9 (5 on NodeHarness, 2 on MockEventStream, 2 on MockOutputSender/OutputCollector) |
-| **Dependencies locked** | arrow=53, tokio, serde, serde_json |
+| **Dependencies locked** | arrow=58, tokio, flume, futures, serde_json |
 | **CI jobs** | 4 (check, test, clippy, fmt) |
 | **Deliverables on track** | ✅ 7/7 (API, mock types, crate scaffold, CI, tests, cargo mirror, API freeze) |
 

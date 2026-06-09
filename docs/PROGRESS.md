@@ -23,10 +23,11 @@
 | Decision | Rationale |
 |---|---|
 | Crate at repo root (not `libraries/test-utils/`) | Standalone repo; path matches dora monorepo only when merged upstream |
-| `arrow = "53"` | Matches the Arrow version DORA uses for inter-node data |
-| `tokio` for mock channels | `mpsc` channels replace daemon socket; same runtime as DORA |
+| `arrow = "58"` | Matches the Arrow version DORA uses for inter-node data (upgraded from 53 in Week 2) |
+| `flume` for output capture | `TestingOutput::ToChannel` uses flume; same channel crate DORA uses internally |
+| `tokio` for mock channels | Mock types use `tokio::sync::mpsc` channels; same runtime as DORA |
 | Stub-only (no real impl yet) | Week 1–2 scope is design + scaffold; implementation starts Week 3 |
-| `dora-node-api` NOT yet a dependency | Need to confirm the exact git rev / crate name with mentor before wiring up |
+| `dora-node-api` pinned to `45436aad` | Confirmed with mentor; locked to specific commit for reproducibility |
 
 ---
 
@@ -36,7 +37,7 @@
 
 - [x] **Clone & audit DORA source** at `dora/` (commit 45436aad)
 - [x] **Post mentor discussion** with 4 questions in GitHub Discussions
-- [x] **Update Cargo.toml** with `dora-node-api` = { git = "...", branch = "main" }
+- [x] **Update Cargo.toml** with `dora-node-api` = { git = "...", rev = "45436aad" }
 - [x] **Implement MockOutputSender** (complete with unit tests)
   - [x] `MockOutputSender::send(output_id, ArrayData) -> Result<()>` ✅
   - [x] `OutputCollector` buffer & indexing by output_id ✅
@@ -50,11 +51,18 @@
 - [x] **Cargo.toml adjustments**
   - [x] Upgrade Arrow from 53 → 58 (matches DORA main branch)
   - [x] Add futures = "0.3" for Stream trait compatibility
-- [x] **NodeHarness::new() skeleton implemented** (2026-06-07)
-  - [x] Calls `DoraNode::init_testing()` with `TestingInput::Input(...)` + `TestingOutput::ToWriter(sink())`
-  - [x] Stores `(DoraNode, EventStream)` + mock channel handles (`input_tx`, `output_collector`)
-  - [x] `send_input` / `tick` / `recv_output` / `run_to_completion` remain `todo!()` (Week 3)
-  - [x] `#[allow(dead_code)]` on fields — intentionally unused at skeleton stage
+- [x] **NodeHarness fully wired** (2026-06-07, rewired 2026-06-09 per mentor feedback)
+  - [x] Calls `DoraNode::init_testing()` with `TestingInput::Channel(rx)` + `TestingOutput::ToChannel(tx)`
+  - [x] Both legs live: input via flume channel for runtime injection, output via flume for capture
+  - [x] Returns `Result<Self, NodeError>` instead of panicking
+  - [x] `send_input(TimedIncomingEvent)` implemented — pushes events through live channel
+  - [x] `send_stop()` convenience method added
+  - [x] `tick()` uses synchronous `EventStream::recv()` (blocking — consistent with `init_testing`)
+  - [x] `recv_output()` drains flume-based output buffers (returns JSON maps per DORA format)
+  - [x] Field order ensures clean shutdown: `input_tx` dropped first → unblocks daemon thread
+  - [x] Upstream dora change: added `TestingInput::Channel(flume::Receiver<TimedIncomingEvent>)` variant
+  - [x] Upstream dora change: added `EventSource` enum to `IntegrationTestingEvents` for channel support
+  - [x] Smoke test passes: create harness → send_stop → tick → assert event received
 - [x] **Bug fix: MockEventStream hanging tests**
   - [x] `test_mock_event_stream_multiple_events` — drop `tx` before checking `None`
   - [x] `test_mock_event_stream_multiple_senders` — drop `tx1` + `tx2` before checking `None`
