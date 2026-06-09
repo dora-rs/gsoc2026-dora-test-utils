@@ -155,7 +155,7 @@ impl NodeHarness {
             .expect("NodeHarness: input channel disconnected — node may have panicked");
     }
 
-    /// Convience: inject a [`Stop`](dora_node_api::integration_testing::integration_testing_format::IncomingEvent::Stop)
+    /// Convenience: inject a [`Stop`](dora_node_api::integration_testing::integration_testing_format::IncomingEvent::Stop)
     /// event (delivered immediately).
     pub fn send_stop(&mut self) {
         self.send_input(TimedIncomingEvent {
@@ -173,14 +173,17 @@ impl NodeHarness {
     ///
     /// # Errors
     ///
-    /// Returns a [`NodeError`] if the underlying `send_output` call fails.
+    /// Returns a [`NodeError`] if `output_id` is invalid or the underlying
+    /// `send_output` call fails.
     pub fn send_output(
         &mut self,
         output_id: &str,
         data: impl arrow::array::Array,
     ) -> Result<(), NodeError> {
-        self.node
-            .send_output(output_id.parse().unwrap(), Default::default(), data)
+        let data_id = output_id
+            .parse()
+            .map_err(|e| NodeError::Init(format!("invalid output_id '{output_id}': {e}")))?;
+        self.node.send_output(data_id, Default::default(), data)
     }
 
     /// Drive the node to process **one** event from the [`EventStream`].
