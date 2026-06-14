@@ -214,14 +214,22 @@ gsoc2026-dora-test-utils/
 - [x] **End-to-end test** — ✅ `tests/e2e.rs`: send_input → tick → verify Input + Stop events
 - [x] **Code review bugs fixed** — ✅ Typo, error variant, unwrap panic resolved
 
-#### Week 4 (高优先级)
-- [ ] **NodeHarness::run_to_completion()** — Batch mode
-  - [ ] Loop tick() until input channel exhausted
-  - [ ] Break on Event::Stop
-  - [ ] Batch test scenario: 3 inputs → verify all outputs
-- [ ] **API Freeze** — Lock public signatures
-  - [ ] Review all public methods
-  - [ ] Document breaking-change policy for Week 5+
+#### Week 4 (高优先级) ✅ COMPLETE (2026-06-14)
+- [x] **NodeHarness::run_to_completion()** — Batch mode
+  - [x] Loop tick() until event stream exhausted
+  - [x] Break on Event::Stop or Event::InputClosed
+  - [x] Auto-calls close_input() to unblock daemon thread
+  - [x] Returns Vec<Event> for assertion in tests
+- [x] **send_output deadlock fix**
+  - [x] input_tx changed to Option<Sender> for controlled drop
+  - [x] Added close_input() method — drops sender to unblock daemon thread
+  - [x] run_to_completion() auto-calls close_input()
+- [x] **E2E test coverage extended**
+  - [x] e2e_send_output_and_recv — pure output path (close_input → send_output → recv_output)
+  - [x] e2e_run_to_completion_returns_events — batch mode with output after completion
+  - [x] e2e_full_pipeline_input_to_output — full input → completion → output pipeline
+- [x] **API Freeze** — Lock public signatures
+  - [x] All NodeHarness public methods finalized (new, send_input, send_stop, send_output, tick, recv_output, close_input, run_to_completion)
 
 #### Week 5 (中优先级)
 - [ ] **TestSourceNode binary** (`src/bin/test_source.rs`)
@@ -311,6 +319,7 @@ gsoc2026-dora-test-utils/
 | Week 2 Mock impl | 6 unit + 3 smoke tests passing | 9/9 | ✅ |
 | Week 2 NodeHarness::new() | Skeleton calling init_testing() | ✅ | ✅ |
 | Week 3 NodeHarness core | 6 methods (send_input/send_stop/send_output/tick/recv_output/new) + E2E test | 10/10 tests passing | ✅ |
+| Week 4 NodeHarness complete | close_input + run_to_completion + 3 new E2E tests | 13/13 tests passing | ✅ |
 | Week 5 Binaries | TestSource + TestSink | 0/2 | ⏳ |
 | Week 11 Docs | API + Setup + Usage | 0/3 | ⏳ |
 | **Mid-term eval (Week 12)** | MVP complete | TBD | ⏳ |

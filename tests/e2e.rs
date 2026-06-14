@@ -85,10 +85,17 @@ fn e2e_send_output_and_recv() {
         .recv_output(output_id)
         .expect("should have captured output for 'test_output'");
     assert_eq!(outputs.len(), 1, "expected one output message");
-    assert!(outputs[0].contains_key("data"), "output should contain data");
+    assert!(
+        outputs[0].contains_key("data"),
+        "output should contain data"
+    );
     assert!(outputs[0].contains_key("id"), "output should contain id");
     let output_id_value = outputs[0].get("id").and_then(|v| v.as_str());
-    assert_eq!(output_id_value, Some("test_output"), "output id should match");
+    assert_eq!(
+        output_id_value,
+        Some("test_output"),
+        "output id should match"
+    );
 }
 
 /// run_to_completion: pre-load Input + Stop, verify all events returned.
