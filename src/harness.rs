@@ -81,10 +81,10 @@ pub struct NodeHarness {
     //
     // DO NOT reorder these fields without understanding the two-thread
     // cleanup protocol described above.
-    /// Sender for runtime event injection — pushes events into the
-    /// node's integration-testing daemon connection via
-    /// [`TestingInput::Channel`].
-    pub(crate) input_tx: flume::Sender<TimedIncomingEvent>,
+    /// Sender for runtime event injection.
+    /// Wrapped in `Option` so [`close_input`](Self::close_input) can drop the sender
+    /// to unblock the daemon thread, making [`send_output`](Self::send_output) safe.
+    pub(crate) input_tx: Option<flume::Sender<TimedIncomingEvent>>,
     /// Receiver for outputs captured via [`TestingOutput::ToChannel`].
     pub(crate) output_rx: flume::Receiver<serde_json::Map<String, serde_json::Value>>,
     /// Buffered outputs indexed by output ID (the `"id"` field in each
@@ -130,7 +130,7 @@ impl NodeHarness {
         let (node, event_stream) = DoraNode::init_testing(inputs, outputs, options)?;
 
         Ok(Self {
-            input_tx,
+            input_tx: Some(input_tx),
             output_rx,
             output_buffers: HashMap::new(),
             event_stream,
@@ -146,11 +146,13 @@ impl NodeHarness {
     ///
     /// # Panics
     ///
-    /// Panics if the node's background thread has terminated (channel
-    /// disconnected).  In normal test usage this shouldn't happen
-    /// unless the node panicked or `init_testing` failed silently.
+    /// Panics if [`close_input`](Self::close_input) was already called
+    /// (the input sender has been dropped).  Also panics if the node's
+    /// background thread has terminated (channel disconnected).
     pub fn send_input(&mut self, event: TimedIncomingEvent) {
         self.input_tx
+            .as_ref()
+            .expect("NodeHarness: input channel closed — close_input() was already called")
             .send(event)
             .expect("NodeHarness: input channel disconnected — node may have panicked");
     }
@@ -163,6 +165,20 @@ impl NodeHarness {
             event:
                 dora_node_api::integration_testing::integration_testing_format::IncomingEvent::Stop,
         });
+    }
+
+    /// Close the input channel, unblocking the daemon thread.
+    ///
+    /// After calling this, no more inputs can be sent via
+    /// [`send_input`](Self::send_input). But [`send_output`](Self::send_output)
+    /// and [`recv_output`](Self::recv_output) become safe to call without
+    /// risk of deadlock — the daemon thread's `rx.recv()` returns
+    /// `Disconnected` and it resumes processing `DaemonRequest::SendMessage`.
+    ///
+    /// [`run_to_completion`](Self::run_to_completion) calls this automatically
+    /// after the event stream is exhausted.
+    pub fn close_input(&mut self) {
+        self.input_tx.take();
     }
 
     /// Send an output from the node under test.
@@ -222,15 +238,43 @@ impl NodeHarness {
         self.output_buffers.remove(&output_id.into())
     }
 
-    /// Run the node to completion, pumping events until the input
-    /// channel is exhausted.
+    /// Run the node to completion, pumping events until the event stream
+    /// is exhausted or a [`Stop`](Event::Stop) is received.
     ///
-    /// Useful for batch-testing a node with many inputs.
+    /// Returns all events processed during the run.  After this method
+    /// returns, [`close_input`](Self::close_input) has been called
+    /// automatically — [`send_output`](Self::send_output) and
+    /// [`recv_output`](Self::recv_output) are safe to use.
     ///
-    /// **Not yet implemented** — will loop [`tick`](Self::tick) until
-    /// the event stream returns `None` (Week 4).
-    pub fn run_to_completion(&mut self) {
-        todo!("run_to_completion — will loop tick() until idle (Week 4)")
+    /// # Usage
+    ///
+    /// Pre-load all inputs (including a [`Stop`](Event::Stop)) via
+    /// [`send_input`](Self::send_input) / [`send_stop`](Self::send_stop),
+    /// then call this method to drive the node through all events.
+    ///
+    /// ```ignore
+    /// harness.send_input(my_input);
+    /// harness.send_stop();
+    /// let events = harness.run_to_completion();
+    /// assert!(events.iter().any(|e| matches!(e, Event::Stop(..))));
+    ///
+    /// // Now safe: daemon thread is unblocked
+    /// harness.send_output("out", my_array).unwrap();
+    /// let outputs = harness.recv_output("out");
+    /// ```
+    pub fn run_to_completion(&mut self) -> Vec<Event> {
+        let mut events = Vec::new();
+        while let Some(event) = self.tick() {
+            let is_stop = matches!(event, Event::Stop(..));
+            let is_input_closed = matches!(event, Event::InputClosed { .. });
+            events.push(event);
+            if is_stop || is_input_closed {
+                break;
+            }
+        }
+        // Unblock the daemon thread so send_output won't deadlock.
+        self.close_input();
+        events
     }
 
     // ── private helpers ────────────────────────────────────────────
