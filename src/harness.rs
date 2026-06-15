@@ -96,7 +96,6 @@ pub struct NodeHarness {
     ///
     /// The node runs in a background thread; this handle is kept for
     /// future use (e.g. `send_output`, graceful shutdown).
-    #[allow(dead_code)]
     pub(crate) node: DoraNode,
 }
 
@@ -187,6 +186,10 @@ impl NodeHarness {
     /// captured by [`TestingOutput::ToChannel`] and can be retrieved via
     /// [`recv_output`](Self::recv_output).
     ///
+    /// This method automatically calls [`close_input`](Self::close_input) to
+    /// unblock the daemon thread before sending.  After this method returns,
+    /// no more inputs can be sent via [`send_input`](Self::send_input).
+    ///
     /// # Errors
     ///
     /// Returns a [`NodeError`] if `output_id` is invalid or the underlying
@@ -196,6 +199,12 @@ impl NodeHarness {
         output_id: &str,
         data: impl arrow::array::Array,
     ) -> Result<(), NodeError> {
+        // Close the input channel to unblock the daemon thread.  The daemon
+        // is single-threaded and blocks on `input_rx.recv()` while processing
+        // the eagerly-issued NextEvent request.  Dropping the sender causes
+        // `recv()` to return Disconnected, the daemon returns to its request
+        // loop, and our SendMessage becomes processable.
+        self.close_input();
         let data_id = output_id
             .parse()
             .map_err(|e| NodeError::Output(format!("invalid output_id '{output_id}': {e}")))?;
@@ -239,22 +248,23 @@ impl NodeHarness {
     }
 
     /// Run the node to completion, pumping events until the event stream
-    /// is exhausted or a [`Stop`](Event::Stop) is received.
+    /// is exhausted, a [`Stop`](Event::Stop) is received, or an
+    /// [`InputClosed`](Event::InputClosed) arrives.
     ///
-    /// Returns all events processed during the run.  After this method
-    /// returns, [`close_input`](Self::close_input) has been called
-    /// automatically — [`send_output`](Self::send_output) and
+    /// A [`Stop`](Event::Stop) is injected automatically at the end of the
+    /// input queue, so callers do not need to pre-load one — the method
+    /// always terminates.  If caller already sent a Stop, the extra one is
+    /// harmless (consumed after the stream ends).
+    ///
+    /// Returns all events processed during the run, up to and including the
+    /// first terminal event.  After this method returns,
+    /// [`close_input`](Self::close_input) has been called automatically —
+    /// [`send_output`](Self::send_output) and
     /// [`recv_output`](Self::recv_output) are safe to use.
-    ///
-    /// # Usage
-    ///
-    /// Pre-load all inputs (including a [`Stop`](Event::Stop)) via
-    /// [`send_input`](Self::send_input) / [`send_stop`](Self::send_stop),
-    /// then call this method to drive the node through all events.
     ///
     /// ```ignore
     /// harness.send_input(my_input);
-    /// harness.send_stop();
+    /// // No need to call send_stop() — run_to_completion handles it.
     /// let events = harness.run_to_completion();
     /// assert!(events.iter().any(|e| matches!(e, Event::Stop(..))));
     ///
@@ -263,6 +273,10 @@ impl NodeHarness {
     /// let outputs = harness.recv_output("out");
     /// ```
     pub fn run_to_completion(&mut self) -> Vec<Event> {
+        // Inject Stop at end of queue so the daemon thread never blocks
+        // indefinitely in next_event() → rx.recv().  If the caller already
+        // sent a Stop, the extra one is silently consumed after termination.
+        self.send_stop();
         let mut events = Vec::new();
         while let Some(event) = self.tick() {
             let is_stop = matches!(event, Event::Stop(..));

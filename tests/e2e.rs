@@ -60,25 +60,21 @@ fn e2e_receive_input_and_stop() {
     );
 }
 
-/// Output path: close_input → send_output → recv_output (no tick needed).
+/// Output path: send_output → recv_output (no tick needed).
 ///
-/// The daemon thread is single-threaded: it blocks on `input_rx.recv()`
-/// when processing `NextEvent`.  We must call `close_input()` first to
-/// unblock the daemon before `send_output` will be processed.
+/// send_output() automatically calls close_input() to unblock the daemon
+/// thread, so the caller does not need to manage the input channel lifecycle.
 #[test]
 fn e2e_send_output_and_recv() {
     let mut harness = NodeHarness::new().expect("NodeHarness::new should succeed");
 
-    // Close the input channel to unblock the daemon thread so that
-    // send_output requests are processed without deadlocking.
-    harness.close_input();
-
     // Send an output via the harness (delegates to DoraNode::send_output).
+    // send_output() auto-closes the input channel, preventing deadlock.
     let output_id = "test_output";
     let array = arrow::array::Int32Array::from(vec![10, 20, 30]);
     harness
         .send_output(output_id, array)
-        .expect("send_output should succeed after close_input");
+        .expect("send_output should succeed");
 
     // Retrieve the output.
     let outputs = harness
@@ -98,10 +94,10 @@ fn e2e_send_output_and_recv() {
     );
 }
 
-/// run_to_completion: pre-load Input + Stop, verify all events returned.
+/// run_to_completion: pre-load Input, verify all events returned (no manual Stop needed).
 ///
-/// After run_to_completion() returns, the input channel is closed
-/// (close_input was called), so send_output is safe.
+/// run_to_completion() auto-injects a Stop event and auto-calls close_input(),
+/// so the caller only needs to send the inputs they want to test.
 #[test]
 fn e2e_run_to_completion_returns_events() {
     let mut harness = NodeHarness::new().expect("NodeHarness::new should succeed");
@@ -119,9 +115,7 @@ fn e2e_run_to_completion_returns_events() {
         },
     });
 
-    // Pre-load Stop so the daemon thread won't block.
-    harness.send_stop();
-
+    // No need to call send_stop() — run_to_completion handles it.
     // Run to completion.
     let events = harness.run_to_completion();
 
@@ -150,15 +144,15 @@ fn e2e_run_to_completion_returns_events() {
     assert!(outputs.is_some(), "should have captured output after run");
 }
 
-/// Full pipeline: send_input → tick through input → send_output → recv_output.
+/// Full pipeline: send_input → run_to_completion → send_output → recv_output.
 ///
-/// Verifies that the input and output paths both work within the same
-/// harness lifecycle.
+/// Verifies that both input and output paths work in the same harness
+/// lifecycle.  run_to_completion() auto-injects Stop and auto-closes input.
 #[test]
 fn e2e_full_pipeline_input_to_output() {
     let mut harness = NodeHarness::new().expect("NodeHarness::new should succeed");
 
-    // Phase 1: Send input + stop, drive to completion.
+    // Phase 1: Send input, drive to completion (no manual Stop needed).
     harness.send_input(TimedIncomingEvent {
         time_offset_secs: 0.0,
         event: IncomingEvent::Input {
@@ -170,9 +164,13 @@ fn e2e_full_pipeline_input_to_output() {
             })),
         },
     });
-    harness.send_stop();
 
     let events = harness.run_to_completion();
+    // Verify both Input and Stop were received.
+    assert!(
+        events.iter().any(|e| matches!(e, Event::Input { .. })),
+        "should have received Input"
+    );
     assert!(
         events.iter().any(|e| matches!(e, Event::Stop(..))),
         "should have received Stop"
