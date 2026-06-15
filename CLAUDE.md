@@ -6,8 +6,9 @@ framework.
 
 ## Student
 
-- handle: TBD-fill-in
-- weekly_slot: TBD-fill-in (e.g. "Tuesdays 09:00 PT")
+- handle: SunSunSun689
+- weekly_slot: Sundays 19:30-20:00 America/Los_Angeles
+- student_fork: https://github.com/SunSunSun689/gsoc2026-dora-test-utils
 
 ## Mentor
 
@@ -15,9 +16,10 @@ framework.
 
 ## Proposal
 
-The candidate's accepted proposal is committed at the repo root as
-`proposal.pdf`. Treat it as the source of truth for scope and weekly
-goals; quote section anchors when filing issues.
+The candidate's accepted proposal is the authoritative source for scope
+and weekly goals. The PDF is shared privately with the student and
+mentor (not committed to this public repo). Quote relevant excerpts in
+issues and discussions when needed.
 
 ## Milestones
 
