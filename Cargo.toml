@@ -17,6 +17,7 @@ dora-node-api = { path = "dora/apis/rust/node" }
 # Arrow: DORA uses Arrow arrays for inter-node data.
 # Using 58 to match latest DORA main (which has upgraded from 53).
 arrow = "58"
+arrow-json = "58"
 
 # Tokio: async runtime used by DORA and our harness.
 tokio = { version = "1", features = ["sync", "macros", "rt"] }
