@@ -156,6 +156,46 @@ impl NodeHarness {
             .expect("NodeHarness: input channel disconnected — node may have panicked");
     }
 
+    /// Convenience: inject input data by ID.
+    ///
+    /// Wraps `data` in a [`TimedIncomingEvent`] and delegates to
+    /// [`send_input`](Self::send_input).  The data type must implement
+    /// [`IntoInputData`] — currently [`serde_json::Value`] and
+    /// [`arrow::array::ArrayData`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if [`close_input`](Self::close_input) was already called,
+    /// if the channel is disconnected, or if `input_id` is not a valid
+    /// [`DataId`](dora_node_api::DataId).
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // JSON data — the most common case
+    /// harness.send_data("image", serde_json::json!({"width": 640}));
+    ///
+    /// // Arrow data
+    /// let array = Int32Array::from(vec![1, 2, 3]).into_data();
+    /// harness.send_data("numbers", array);
+    /// ```
+    pub fn send_data(&mut self, input_id: &str, data: impl crate::traits::IntoInputData) {
+        use dora_node_api::integration_testing::integration_testing_format::{
+            IncomingEvent, TimedIncomingEvent,
+        };
+
+        self.send_input(TimedIncomingEvent {
+            time_offset_secs: 0.0,
+            event: IncomingEvent::Input {
+                id: input_id
+                    .parse()
+                    .expect("NodeHarness::send_data: invalid input_id"),
+                metadata: None,
+                data: Some(Box::new(data.into_input_data())),
+            },
+        });
+    }
+
     /// Convenience: inject a [`Stop`](dora_node_api::integration_testing::integration_testing_format::IncomingEvent::Stop)
     /// event (delivered immediately).
     pub fn send_stop(&mut self) {
