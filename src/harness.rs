@@ -179,7 +179,7 @@ impl NodeHarness {
     /// let array = Int32Array::from(vec![1, 2, 3]).into_data();
     /// harness.send_data("numbers", array);
     /// ```
-    pub fn send_data(&mut self, input_id: &str, data: impl crate::traits::IntoInputData) {
+    pub fn send_data(&mut self, input_id: &str, data: impl crate::IntoInputData) {
         use dora_node_api::integration_testing::integration_testing_format::{
             IncomingEvent, TimedIncomingEvent,
         };
@@ -187,9 +187,9 @@ impl NodeHarness {
         self.send_input(TimedIncomingEvent {
             time_offset_secs: 0.0,
             event: IncomingEvent::Input {
-                id: input_id
-                    .parse()
-                    .expect("NodeHarness::send_data: invalid input_id"),
+                id: input_id.parse().unwrap_or_else(|e| {
+                    panic!("NodeHarness::send_data: invalid input_id '{input_id}': {e}")
+                }),
                 metadata: None,
                 data: Some(Box::new(data.into_input_data())),
             },
