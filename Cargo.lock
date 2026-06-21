@@ -882,6 +882,7 @@ name = "dora-test-utils"
 version = "0.1.0"
 dependencies = [
  "arrow",
+ "arrow-json",
  "dora-node-api",
  "flume 0.10.14",
  "futures",

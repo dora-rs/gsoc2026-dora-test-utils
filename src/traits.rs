@@ -34,23 +34,23 @@ impl IntoInputData for arrow::array::ArrayData {
 
         // Build a single-column RecordBatch wrapping this array.
         let array_ref = arrow::array::make_array(self);
-        let schema = Schema::new(vec![Field::new(
-            "data",
-            data_type,
-            true,
-        )]);
+        let schema = Schema::new(vec![Field::new("data", data_type, true)]);
         let batch = RecordBatch::try_new(Arc::new(schema), vec![array_ref])
             .expect("IntoInputData: failed to create RecordBatch from ArrayData");
 
         // Serialize the batch to JSON array format.
         let mut buf = Vec::new();
         let mut writer = Writer::<_, JsonArray>::new(&mut buf);
-        writer.write(&batch).expect("IntoInputData: Arrow -> JSON write failed");
-        writer.finish().expect("IntoInputData: Arrow -> JSON finish failed");
+        writer
+            .write(&batch)
+            .expect("IntoInputData: Arrow -> JSON write failed");
+        writer
+            .finish()
+            .expect("IntoInputData: Arrow -> JSON finish failed");
         drop(writer);
 
-        let json_str = String::from_utf8(buf)
-            .expect("IntoInputData: Arrow JSON output is valid UTF-8");
+        let json_str =
+            String::from_utf8(buf).expect("IntoInputData: Arrow JSON output is valid UTF-8");
 
         // Parse JSON. The output is a JSON array of row objects;
         // DORA's JSON->Arrow converter handles this correctly.
