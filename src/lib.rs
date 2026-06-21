@@ -90,8 +90,10 @@
 
 pub mod harness;
 pub mod mock;
+pub mod traits;
 
 // Re-export the key types for convenience.
 pub use harness::NodeHarness;
 pub use mock::event_stream::MockEventStream;
 pub use mock::output::{MockOutputSender, OutputCollector};
+pub use traits::IntoInputData;
