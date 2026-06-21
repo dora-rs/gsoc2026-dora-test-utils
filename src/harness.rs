@@ -346,3 +346,52 @@ impl NodeHarness {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_send_data_json() {
+        let mut harness = NodeHarness::new().expect("harness should be created");
+
+        harness.send_data("test_id", serde_json::json!([1, 2, 3]));
+
+        // After send_data, the input should be queued. Drive with tick.
+        let event = harness.tick().expect("should receive Input event");
+        match event {
+            dora_node_api::Event::Input { id, data, .. } => {
+                assert_eq!(id.to_string(), "test_id");
+                assert!(data.0.len() > 0, "data should be non-empty");
+            }
+            other => panic!("expected Input event, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_send_data_arrow() {
+        use arrow::array::{Array, Int32Array};
+
+        let mut harness = NodeHarness::new().expect("harness should be created");
+
+        let array = Int32Array::from(vec![42, 99]).into_data();
+        harness.send_data("arrow_in", array);
+
+        let event = harness.tick().expect("should receive Input event");
+        match event {
+            dora_node_api::Event::Input { id, data, .. } => {
+                assert_eq!(id.to_string(), "arrow_in");
+                assert!(data.0.len() > 0, "data should be non-empty");
+            }
+            other => panic!("expected Input event, got {other:?}"),
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "input channel closed")]
+    fn test_send_data_panics_after_close_input() {
+        let mut harness = NodeHarness::new().expect("harness should be created");
+        harness.close_input();
+        harness.send_data("x", serde_json::json!(42));
+    }
+}
