@@ -179,12 +179,22 @@ fn e2e_send_data_arrow_input() {
     harness.send_data("arrow_numbers", array);
     harness.send_stop();
 
-    // Tick -- verify the data was received.
+    // Tick — verify the data was received with correct values.
     let event = harness.tick().expect("should receive Input");
     match event {
         Event::Input { id, data, .. } => {
             assert_eq!(id.to_string(), "arrow_numbers");
-            assert!(data.0.len() > 0, "data should be non-empty");
+            // Verify content: data arrived (non-empty). The Arrow→JSON→Arrow
+            // round-trip may change the concrete Arrow type (e.g. Int32→Struct),
+            // but the values and element count must be preserved.
+            let len = data.0.len();
+            assert!(len > 0, "data should be non-empty");
+            assert_eq!(len, 3, "expected 3 elements after round-trip");
+            // Check that values are recognizable in the debug output.
+            let debug_str = format!("{data:?}");
+            assert!(debug_str.contains("100"), "missing value 100 in {debug_str}");
+            assert!(debug_str.contains("200"), "missing value 200 in {debug_str}");
+            assert!(debug_str.contains("300"), "missing value 300 in {debug_str}");
         }
         other => panic!("expected Input, got {other:?}"),
     }
