@@ -56,8 +56,8 @@ impl IntoInputData for arrow::array::ArrayData {
         // Parse JSON directly from the buffer (known-valid UTF-8, skip re-validation).
         // The output is a JSON array of row objects;
         // DORA's JSON->Arrow converter handles this correctly.
-        let value: serde_json::Value = serde_json::from_slice(&buf)
-            .expect("IntoInputData: Arrow JSON output is valid JSON");
+        let value: serde_json::Value =
+            serde_json::from_slice(&buf).expect("IntoInputData: Arrow JSON output is valid JSON");
 
         InputData::JsonObject {
             data: value,

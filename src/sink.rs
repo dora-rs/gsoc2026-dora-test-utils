@@ -55,10 +55,18 @@ pub struct Difference {
 pub fn run_test_sink(config: SinkConfig) -> eyre::Result<SinkResult> {
     // ── 1. Load expected data ────────────────────────────────────
     let expected_json: serde_json::Value = {
-        let contents = std::fs::read_to_string(&config.expected_file)
-            .with_context(|| format!("failed to read expected file '{}'", config.expected_file.display()))?;
-        serde_json::from_str(&contents)
-            .with_context(|| format!("invalid JSON in expected file '{}'", config.expected_file.display()))?
+        let contents = std::fs::read_to_string(&config.expected_file).with_context(|| {
+            format!(
+                "failed to read expected file '{}'",
+                config.expected_file.display()
+            )
+        })?;
+        serde_json::from_str(&contents).with_context(|| {
+            format!(
+                "invalid JSON in expected file '{}'",
+                config.expected_file.display()
+            )
+        })?
     };
 
     let expected_data = expected_json
@@ -97,8 +105,12 @@ pub fn run_test_sink(config: SinkConfig) -> eyre::Result<SinkResult> {
 
     // ── 5. Write result ──────────────────────────────────────────
     let result_json = serde_json::to_string_pretty(&result)?;
-    std::fs::write(&config.output_file, result_json)
-        .with_context(|| format!("failed to write result to '{}'", config.output_file.display()))?;
+    std::fs::write(&config.output_file, result_json).with_context(|| {
+        format!(
+            "failed to write result to '{}'",
+            config.output_file.display()
+        )
+    })?;
 
     Ok(result)
 }
@@ -217,19 +229,23 @@ fn compare_semantic(
             match v {
                 serde_json::Value::Number(n) => {
                     if let Some(i) = n.as_i64() {
-                        Some(std::sync::Arc::new(arrow::array::Int64Array::from(vec![i])) as arrow::array::ArrayRef)
+                        Some(std::sync::Arc::new(arrow::array::Int64Array::from(vec![i]))
+                            as arrow::array::ArrayRef)
                     } else if let Some(f) = n.as_f64() {
-                        Some(std::sync::Arc::new(arrow::array::Float64Array::from(vec![f])) as arrow::array::ArrayRef)
+                        Some(
+                            std::sync::Arc::new(arrow::array::Float64Array::from(vec![f]))
+                                as arrow::array::ArrayRef,
+                        )
                     } else {
                         None
                     }
                 }
-                serde_json::Value::String(s) => {
-                    Some(std::sync::Arc::new(arrow::array::StringArray::from(vec![s.as_str()])) as arrow::array::ArrayRef)
-                }
-                serde_json::Value::Bool(b) => {
-                    Some(std::sync::Arc::new(arrow::array::BooleanArray::from(vec![*b])) as arrow::array::ArrayRef)
-                }
+                serde_json::Value::String(s) => Some(std::sync::Arc::new(
+                    arrow::array::StringArray::from(vec![s.as_str()]),
+                ) as arrow::array::ArrayRef),
+                serde_json::Value::Bool(b) => Some(std::sync::Arc::new(
+                    arrow::array::BooleanArray::from(vec![*b]),
+                ) as arrow::array::ArrayRef),
                 _ => None,
             }
         })
@@ -258,9 +274,7 @@ fn compare_semantic(
             (Some(e), Some(r)) => {
                 differences.push(Difference {
                     index: Some(i),
-                    message: format!(
-                        "value mismatch at index {i}: expected {e:?}, got {r:?}"
-                    ),
+                    message: format!("value mismatch at index {i}: expected {e:?}, got {r:?}"),
                 });
             }
             (Some(_), None) => {

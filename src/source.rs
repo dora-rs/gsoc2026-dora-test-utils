@@ -35,9 +35,9 @@ pub fn run_test_source(config: SourceConfig) -> Result<()> {
         .get("data")
         .ok_or_else(|| eyre::eyre!("missing 'data' field in DORA-format input JSON"))?;
 
-    let elements = data_array.as_array().ok_or_else(|| {
-        eyre::eyre!("'data' field must be a JSON array, got: {}", data_array)
-    })?;
+    let elements = data_array
+        .as_array()
+        .ok_or_else(|| eyre::eyre!("'data' field must be a JSON array, got: {}", data_array))?;
 
     if elements.is_empty() {
         eyre::bail!("'data' array is empty — nothing to emit");
@@ -118,9 +118,9 @@ fn json_obj_to_arrow_struct(obj: &serde_json::Value) -> Result<arrow::array::Arr
 
     // Use empty schema for auto-inference
     let schema = Arc::new(Schema::empty());
-    let json_reader = ReaderBuilder::new(schema).build(reader).map_err(|e| {
-        eyre::eyre!("failed to build arrow_json reader: {e}")
-    })?;
+    let json_reader = ReaderBuilder::new(schema)
+        .build(reader)
+        .map_err(|e| eyre::eyre!("failed to build arrow_json reader: {e}"))?;
 
     let mut batches = Vec::new();
     for result in json_reader {
@@ -146,10 +146,8 @@ fn json_obj_to_arrow_struct(obj: &serde_json::Value) -> Result<arrow::array::Arr
 /// Convert a JSON array to a single-column Arrow StructArray.
 fn json_array_to_arrow_struct(arr: &[serde_json::Value]) -> Result<arrow::array::ArrayRef> {
     // Wrap each element in {"data": <element>} so arrow_json can parse it
-    let wrapped: Vec<serde_json::Value> = arr
-        .iter()
-        .map(|v| serde_json::json!({"data": v}))
-        .collect();
+    let wrapped: Vec<serde_json::Value> =
+        arr.iter().map(|v| serde_json::json!({"data": v})).collect();
 
     json_obj_to_arrow_struct(&serde_json::Value::Array(wrapped))
 }
@@ -253,5 +251,4 @@ mod tests {
             "error should mention null"
         );
     }
-
 }

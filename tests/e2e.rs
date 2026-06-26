@@ -192,9 +192,18 @@ fn e2e_send_data_arrow_input() {
             assert_eq!(len, 3, "expected 3 elements after round-trip");
             // Check that values are recognizable in the debug output.
             let debug_str = format!("{data:?}");
-            assert!(debug_str.contains("100"), "missing value 100 in {debug_str}");
-            assert!(debug_str.contains("200"), "missing value 200 in {debug_str}");
-            assert!(debug_str.contains("300"), "missing value 300 in {debug_str}");
+            assert!(
+                debug_str.contains("100"),
+                "missing value 100 in {debug_str}"
+            );
+            assert!(
+                debug_str.contains("200"),
+                "missing value 200 in {debug_str}"
+            );
+            assert!(
+                debug_str.contains("300"),
+                "missing value 300 in {debug_str}"
+            );
         }
         other => panic!("expected Input, got {other:?}"),
     }
