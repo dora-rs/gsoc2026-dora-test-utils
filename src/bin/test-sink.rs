@@ -19,28 +19,30 @@ struct Cli {
     #[arg(long, default_value = "./result.json")]
     output_file: PathBuf,
 
-    /// Exit non-zero on mismatch (default: true).
-    #[arg(long, default_value = "true")]
-    fail_on_mismatch: bool,
+    /// Do not exit with non-zero on mismatch.
+    #[arg(long)]
+    no_fail_on_mismatch: bool,
 
     /// Use exact JSON string comparison instead of Arrow semantic comparison.
-    #[arg(long, default_value = "false")]
+    #[arg(long)]
     strict: bool,
 }
 
 fn main() {
     let cli = Cli::parse();
 
+    let fail_on_mismatch = !cli.no_fail_on_mismatch;
+
     let config = SinkConfig {
         expected_file: cli.expected_file,
         output_file: cli.output_file,
-        fail_on_mismatch: cli.fail_on_mismatch,
+        fail_on_mismatch,
         strict: cli.strict,
     };
 
     match run_test_sink(config) {
         Ok(result) => {
-            if !result.r#match && cli.fail_on_mismatch {
+            if !result.r#match && fail_on_mismatch {
                 eprintln!(
                     "mismatch: {} differences found (expected {} items, got {})",
                     result.differences.len(),
