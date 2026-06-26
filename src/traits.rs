@@ -25,6 +25,11 @@ impl IntoInputData for serde_json::Value {
 
 impl IntoInputData for arrow::array::ArrayData {
     fn into_input_data(self) -> InputData {
+        assert!(
+            !self.is_empty(),
+            "IntoInputData: empty ArrayData is not supported — \
+             empty data causes the daemon thread to deadlock in tick()"
+        );
         use arrow::array::RecordBatch;
         use arrow::datatypes::{Field, Schema};
         use arrow_json::writer::{JsonArray, Writer};
@@ -47,14 +52,11 @@ impl IntoInputData for arrow::array::ArrayData {
         writer
             .finish()
             .expect("IntoInputData: Arrow -> JSON finish failed");
-        drop(writer);
 
-        let json_str =
-            String::from_utf8(buf).expect("IntoInputData: Arrow JSON output is valid UTF-8");
-
-        // Parse JSON. The output is a JSON array of row objects;
+        // Parse JSON directly from the buffer (known-valid UTF-8, skip re-validation).
+        // The output is a JSON array of row objects;
         // DORA's JSON->Arrow converter handles this correctly.
-        let value: serde_json::Value = serde_json::from_str(&json_str)
+        let value: serde_json::Value = serde_json::from_slice(&buf)
             .expect("IntoInputData: Arrow JSON output is valid JSON");
 
         InputData::JsonObject {
@@ -107,23 +109,6 @@ mod tests {
     }
 
     #[test]
-    fn test_into_input_data_for_arrow_array_data_empty() {
-        use arrow::array::{Array, Int32Array};
-
-        let arr = Int32Array::from(Vec::<i32>::new());
-        let array_data = arr.into_data();
-        let input_data = array_data.into_input_data();
-        match input_data {
-            InputData::JsonObject { data, data_type } => {
-                let rows = data.as_array().unwrap();
-                assert!(rows.is_empty());
-                assert!(data_type.is_none());
-            }
-            _ => panic!("Expected JsonObject variant"),
-        }
-    }
-
-    #[test]
     fn test_into_input_data_for_arrow_string_array() {
         use arrow::array::{Array, StringArray};
 
@@ -140,5 +125,13 @@ mod tests {
             }
             _ => panic!("Expected JsonObject variant"),
         }
+    }
+
+    #[test]
+    #[should_panic(expected = "empty ArrayData is not supported")]
+    fn test_into_input_data_empty_arraydata_panics() {
+        use arrow::array::{Array, Int32Array};
+        let arr = Int32Array::from(Vec::<i32>::new());
+        let _ = arr.into_data().into_input_data();
     }
 }

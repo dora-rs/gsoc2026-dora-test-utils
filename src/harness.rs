@@ -169,6 +169,11 @@ impl NodeHarness {
     /// if the channel is disconnected, or if `input_id` is not a valid
     /// [`DataId`](dora_node_api::DataId).
     ///
+    /// After calling this method, the input channel is still open. To safely
+    /// call [`send_output`](Self::send_output) afterward, you must first
+    /// close the input channel via [`close_input`](Self::close_input) or
+    /// [`run_to_completion`](Self::run_to_completion).
+    ///
     /// # Example
     ///
     /// ```ignore
@@ -362,7 +367,7 @@ mod tests {
         match event {
             dora_node_api::Event::Input { id, data, .. } => {
                 assert_eq!(id.to_string(), "test_id");
-                assert!(data.0.len() > 0, "data should be non-empty");
+                assert!(!data.0.is_empty(), "data should be non-empty");
             }
             other => panic!("expected Input event, got {other:?}"),
         }
@@ -381,14 +386,14 @@ mod tests {
         match event {
             dora_node_api::Event::Input { id, data, .. } => {
                 assert_eq!(id.to_string(), "arrow_in");
-                assert!(data.0.len() > 0, "data should be non-empty");
+                assert!(!data.0.is_empty(), "data should be non-empty");
             }
             other => panic!("expected Input event, got {other:?}"),
         }
     }
 
     #[test]
-    #[should_panic(expected = "input channel closed")]
+    #[should_panic(expected = "NodeHarness: input channel closed")]
     fn test_send_data_panics_after_close_input() {
         let mut harness = NodeHarness::new().expect("harness should be created");
         harness.close_input();
