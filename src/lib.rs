@@ -103,6 +103,8 @@
 pub mod harness;
 pub mod mock;
 pub mod traits;
+pub mod source;
+pub mod sink;
 
 // Re-export the key types for convenience.
 pub use harness::NodeHarness;

@@ -8,6 +8,15 @@ repository = "https://github.com/dora-rs/dora-test-utils"
 authors = ["SunSunSun689"]
 
 [dependencies]
+# CLI argument parsing for test binaries.
+clap = { version = "4", features = ["derive"] }
+
+# Error handling for test binaries.
+eyre = "0.6"
+
+# Serialization for SinkResult output.
+serde = { version = "1", features = ["derive"] }
+
 # DORA node API — the primary integration surface.
 # Pinned to commit 45436aad (2026-06-07 snapshot).
 # TEMPORARY: use local dora source for TestingInput::Channel development.
