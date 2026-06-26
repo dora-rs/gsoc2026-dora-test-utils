@@ -37,10 +37,7 @@ fn main() {
         match serde_json::from_str(&contents) {
             Ok(v) => v,
             Err(e) => {
-                eprintln!(
-                    "error: invalid JSON in data file '{}': {e}",
-                    path.display()
-                );
+                eprintln!("error: invalid JSON in data file '{}': {e}", path.display());
                 std::process::exit(1);
             }
         }

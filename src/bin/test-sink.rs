@@ -9,7 +9,10 @@ use clap::Parser;
 use dora_test_utils::sink::{run_test_sink, SinkConfig};
 
 #[derive(Parser, Debug)]
-#[command(name = "test-sink", about = "Capture DORA outputs and compare with expected data")]
+#[command(
+    name = "test-sink",
+    about = "Capture DORA outputs and compare with expected data"
+)]
 struct Cli {
     /// Path to the expected output file (DORA JSON format).
     #[arg(long)]
