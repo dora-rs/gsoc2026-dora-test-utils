@@ -211,6 +211,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::approx_constant)]
     fn test_json_to_arrow_float64() {
         let arr = json_value_to_arrow_array(&serde_json::json!(3.14)).unwrap();
         assert_eq!(arr.len(), 1);
