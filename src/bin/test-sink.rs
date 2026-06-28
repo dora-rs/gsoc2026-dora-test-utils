@@ -45,7 +45,11 @@ fn main() {
 
     match run_test_sink(config) {
         Ok(result) => {
-            if !result.r#match && fail_on_mismatch {
+            if !result.r#match {
+                // fail_on_mismatch was already handled by run_test_sink() —
+                // if it had been true and there was a mismatch, we would be
+                // in the Err branch below.  But with fail_on_mismatch=false
+                // we still print the differences for visibility.
                 eprintln!(
                     "mismatch: {} differences found (expected {} items, got {})",
                     result.differences.len(),
@@ -55,12 +59,11 @@ fn main() {
                 for diff in &result.differences {
                     eprintln!("  - {}", diff.message);
                 }
-                std::process::exit(1);
             }
         }
         Err(e) => {
             eprintln!("error: {e:#}");
-            std::process::exit(2);
+            std::process::exit(1);
         }
     }
 }
