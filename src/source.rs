@@ -26,6 +26,7 @@ pub struct SourceConfig {
 /// Returns an error if:
 /// - The `data` JSON is missing the `"data"` field
 /// - The `data` array is empty
+/// - The `"data_type"` field contains an invalid Arrow type
 /// - `DoraNode::init_from_env()` fails
 /// - `send_output()` fails
 pub fn run_test_source(config: SourceConfig) -> Result<()> {
@@ -43,13 +44,23 @@ pub fn run_test_source(config: SourceConfig) -> Result<()> {
         eyre::bail!("'data' array is empty — nothing to emit");
     }
 
-    // ── 2. Convert each JSON element to an Arrow array ────────────
+    // ── 2. Parse data_type hint from JSON ─────────────────────────
+    let data_type: Option<arrow::datatypes::DataType> = config
+        .data
+        .get("data_type")
+        .map(|dt| {
+            serde_json::from_value(dt.clone())
+                .with_context(|| format!("invalid data_type in input JSON: {dt}"))
+        })
+        .transpose()?;
+
+    // ── 3. Convert each JSON element to an Arrow array ────────────
     let arrays: Vec<_> = elements
         .iter()
-        .map(json_value_to_arrow_array)
+        .map(|v| json_value_to_arrow_array(v, data_type.as_ref()))
         .collect::<Result<Vec<_>>>()?;
 
-    // ── 3. Initialize DORA node ───────────────────────────────────
+    // ── 4. Initialize DORA node ───────────────────────────────────
     let (mut node, _events) =
         DoraNode::init_from_env().context("failed to initialize DORA node")?;
 
@@ -58,7 +69,7 @@ pub fn run_test_source(config: SourceConfig) -> Result<()> {
         .parse()
         .map_err(|e| eyre::eyre!("invalid output_id '{}': {e}", config.output_id))?;
 
-    // ── 4. Emit each array as a separate output message ───────────
+    // ── 5. Emit each array as a separate output message ───────────
     for array in arrays {
         node.send_output(output_id.clone(), MetadataParameters::default(), array)
             .context("send_output failed")?;
@@ -69,55 +80,204 @@ pub fn run_test_source(config: SourceConfig) -> Result<()> {
 
 /// Convert a single JSON value to an Arrow array.
 ///
-/// Infers the Arrow type from the JSON value:
+/// Respects the optional `data_type` hint to produce the correct
+/// Arrow type (e.g. `Int32` vs `Int64`).  When `data_type` is
+/// `None` the function infers the Arrow type from the JSON value:
 /// - JSON number (integer) → Int64Array
 /// - JSON number (float) → Float64Array
 /// - JSON string → StringArray
 /// - JSON bool → BooleanArray
 /// - JSON array → wraps in a single-column StructArray via arrow_json
-fn json_value_to_arrow_array(value: &serde_json::Value) -> Result<arrow::array::ArrayRef> {
-    use arrow::array::{BooleanArray, Float64Array, Int64Array, StringArray};
+pub(crate) fn json_value_to_arrow_array(
+    value: &serde_json::Value,
+    data_type: Option<&arrow::datatypes::DataType>,
+) -> Result<arrow::array::ArrayRef> {
     use std::sync::Arc;
 
     match value {
-        serde_json::Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                Ok(Arc::new(Int64Array::from(vec![i])))
-            } else if let Some(f) = n.as_f64() {
-                Ok(Arc::new(Float64Array::from(vec![f])))
-            } else {
-                eyre::bail!("unsupported number value: {n}")
+        serde_json::Value::Number(n) => number_to_arrow_array(n, data_type),
+        serde_json::Value::String(s) => {
+            // Respect data_type hint for string widths.
+            match data_type {
+                Some(arrow::datatypes::DataType::LargeUtf8) => {
+                    Ok(Arc::new(arrow::array::LargeStringArray::from(vec![
+                        s.as_str()
+                    ])))
+                }
+                _ => Ok(Arc::new(arrow::array::StringArray::from(vec![s.as_str()]))),
             }
         }
-        serde_json::Value::String(s) => Ok(Arc::new(StringArray::from(vec![s.as_str()]))),
-        serde_json::Value::Bool(b) => Ok(Arc::new(BooleanArray::from(vec![*b]))),
-        serde_json::Value::Array(arr) => {
-            // Nested array — wrap in a single-column struct via arrow_json
-            json_array_to_arrow_struct(arr)
-        }
-        serde_json::Value::Object(_) => {
-            // Object — wrap in a single-row struct via arrow_json
-            json_obj_to_arrow_struct(value)
-        }
+        serde_json::Value::Bool(b) => Ok(Arc::new(arrow::array::BooleanArray::from(vec![*b]))),
+        serde_json::Value::Array(arr) => json_array_to_arrow_struct(arr, data_type),
+        serde_json::Value::Object(_) => json_obj_to_arrow_struct(value, data_type),
         serde_json::Value::Null => {
             eyre::bail!("null values are not supported as standalone output")
         }
     }
 }
 
-/// Convert a JSON object to a single-row Arrow StructArray.
-fn json_obj_to_arrow_struct(obj: &serde_json::Value) -> Result<arrow::array::ArrayRef> {
-    use arrow::array::RecordBatch;
-    use arrow::datatypes::Schema;
-    use arrow_json::ReaderBuilder;
-    use std::io::BufReader;
+/// Convert a JSON number into an Arrow numeric array, respecting the
+/// optional `data_type` hint for integer/float width.
+fn number_to_arrow_array(
+    n: &serde_json::Number,
+    data_type: Option<&arrow::datatypes::DataType>,
+) -> Result<arrow::array::ArrayRef> {
+    use arrow::datatypes::DataType;
     use std::sync::Arc;
 
-    let json_bytes = serde_json::to_vec(&vec![obj])?;
-    let reader = BufReader::new(&json_bytes[..]);
+    #[allow(clippy::cast_possible_truncation)]
+    match data_type {
+        Some(DataType::Int8) => {
+            let v: i8 = n
+                .as_i64()
+                .and_then(|i| i8::try_from(i).ok())
+                .ok_or_else(|| eyre::eyre!("value {n} out of range for Int8"))?;
+            Ok(Arc::new(arrow::array::Int8Array::from(vec![v])))
+        }
+        Some(DataType::Int16) => {
+            let v: i16 = n
+                .as_i64()
+                .and_then(|i| i16::try_from(i).ok())
+                .ok_or_else(|| eyre::eyre!("value {n} out of range for Int16"))?;
+            Ok(Arc::new(arrow::array::Int16Array::from(vec![v])))
+        }
+        Some(DataType::Int32) => {
+            let v: i32 = n
+                .as_i64()
+                .and_then(|i| i32::try_from(i).ok())
+                .ok_or_else(|| eyre::eyre!("value {n} out of range for Int32"))?;
+            Ok(Arc::new(arrow::array::Int32Array::from(vec![v])))
+        }
+        Some(DataType::Int64) => {
+            if let Some(i) = n.as_i64() {
+                Ok(Arc::new(arrow::array::Int64Array::from(vec![i])))
+            } else {
+                eyre::bail!("value {n} is not representable as Int64")
+            }
+        }
+        Some(DataType::UInt8) => {
+            let v: u8 = n
+                .as_u64()
+                .and_then(|u| u8::try_from(u).ok())
+                .ok_or_else(|| eyre::eyre!("value {n} out of range for UInt8"))?;
+            Ok(Arc::new(arrow::array::UInt8Array::from(vec![v])))
+        }
+        Some(DataType::UInt16) => {
+            let v: u16 = n
+                .as_u64()
+                .and_then(|u| u16::try_from(u).ok())
+                .ok_or_else(|| eyre::eyre!("value {n} out of range for UInt16"))?;
+            Ok(Arc::new(arrow::array::UInt16Array::from(vec![v])))
+        }
+        Some(DataType::UInt32) => {
+            let v: u32 = n
+                .as_u64()
+                .and_then(|u| u32::try_from(u).ok())
+                .ok_or_else(|| eyre::eyre!("value {n} out of range for UInt32"))?;
+            Ok(Arc::new(arrow::array::UInt32Array::from(vec![v])))
+        }
+        Some(DataType::UInt64) => {
+            if let Some(u) = n.as_u64() {
+                Ok(Arc::new(arrow::array::UInt64Array::from(vec![u])))
+            } else {
+                eyre::bail!("value {n} is not representable as UInt64")
+            }
+        }
+        // Float16 not handled here — requires the `half` crate.
+        Some(DataType::Float32) => {
+            let v: f32 = n
+                .as_f64()
+                .map(|f| f as f32)
+                .ok_or_else(|| eyre::eyre!("value {n} out of range for Float32"))?;
+            Ok(Arc::new(arrow::array::Float32Array::from(vec![v])))
+        }
+        Some(DataType::Float64) => {
+            if let Some(f) = n.as_f64() {
+                Ok(Arc::new(arrow::array::Float64Array::from(vec![f])))
+            } else {
+                eyre::bail!("value {n} is not representable as Float64")
+            }
+        }
+        // For unsupported type hints, fall through to inference.
+        _ => {
+            if let Some(i) = n.as_i64() {
+                Ok(Arc::new(arrow::array::Int64Array::from(vec![i])))
+            } else if let Some(f) = n.as_f64() {
+                Ok(Arc::new(arrow::array::Float64Array::from(vec![f])))
+            } else {
+                eyre::bail!("unsupported number value: {n}")
+            }
+        }
+    }
+}
 
-    // Use empty schema for auto-inference
-    let schema = Arc::new(Schema::empty());
+/// Convert a JSON object to a single-row Arrow StructArray.
+///
+/// When `data_type_hint` is provided, the object is wrapped in
+/// `{"data": obj}` before parsing so that the schema field name
+/// matches the JSON key.
+fn json_obj_to_arrow_struct(
+    obj: &serde_json::Value,
+    data_type_hint: Option<&arrow::datatypes::DataType>,
+) -> Result<arrow::array::ArrayRef> {
+    use arrow::datatypes::{Field, Schema};
+    use std::sync::Arc;
+
+    // Build a schema from the data_type hint when available,
+    // falling back to auto-inference for unknown schemas.
+    let schema = data_type_hint
+        .map(|dt| Arc::new(Schema::new(vec![Field::new("data", dt.clone(), true)])))
+        .unwrap_or_else(|| Arc::new(Schema::empty()));
+
+    // When a data_type hint is present, wrap the object in {"data": obj}
+    // so that the schema's "data" field name matches the JSON structure.
+    let json_bytes = if data_type_hint.is_some() {
+        serde_json::to_vec(&vec![serde_json::json!({"data": obj})])?
+    } else {
+        serde_json::to_vec(&vec![obj])?
+    };
+
+    json_bytes_to_arrow_column(&json_bytes, schema)
+}
+
+/// Convert a JSON array to a single-column Arrow StructArray.
+///
+/// Each element is wrapped in `{"data": <element>}` and serialized
+/// directly (without delegating to [`json_obj_to_arrow_struct`]) to
+/// avoid a double-wrapping bug.
+fn json_array_to_arrow_struct(
+    arr: &[serde_json::Value],
+    data_type_hint: Option<&arrow::datatypes::DataType>,
+) -> Result<arrow::array::ArrayRef> {
+    use arrow::datatypes::{Field, Schema};
+    use std::sync::Arc;
+
+    let schema = data_type_hint
+        .map(|dt| Arc::new(Schema::new(vec![Field::new("data", dt.clone(), true)])))
+        .unwrap_or_else(|| Arc::new(Schema::empty()));
+
+    // Wrap each element in {"data": <element>}.
+    let wrapped: Vec<serde_json::Value> =
+        arr.iter().map(|v| serde_json::json!({"data": v})).collect();
+
+    // Serialize directly — do NOT delegate to json_obj_to_arrow_struct
+    // which would wrap again with vec![obj].
+    let json_bytes = serde_json::to_vec(&wrapped)?;
+
+    json_bytes_to_arrow_column(&json_bytes, schema)
+}
+
+/// Shared helper: parse JSON bytes into an Arrow column via arrow_json,
+/// concatenating all batches and extracting the first column.
+fn json_bytes_to_arrow_column(
+    json_bytes: &[u8],
+    schema: std::sync::Arc<arrow::datatypes::Schema>,
+) -> Result<arrow::array::ArrayRef> {
+    use arrow::array::RecordBatch;
+    use arrow_json::ReaderBuilder;
+    use std::io::BufReader;
+
+    let reader = BufReader::new(json_bytes);
     let json_reader = ReaderBuilder::new(schema)
         .build(reader)
         .map_err(|e| eyre::eyre!("failed to build arrow_json reader: {e}"))?;
@@ -129,7 +289,7 @@ fn json_obj_to_arrow_struct(obj: &serde_json::Value) -> Result<arrow::array::Arr
     }
 
     if batches.is_empty() {
-        eyre::bail!("arrow_json produced no batches from object value");
+        eyre::bail!("arrow_json produced no batches from input");
     }
 
     // Merge all batches into one and extract the first column
@@ -141,15 +301,6 @@ fn json_obj_to_arrow_struct(obj: &serde_json::Value) -> Result<arrow::array::Arr
     }
 
     Ok(merged.column(0).clone())
-}
-
-/// Convert a JSON array to a single-column Arrow StructArray.
-fn json_array_to_arrow_struct(arr: &[serde_json::Value]) -> Result<arrow::array::ArrayRef> {
-    // Wrap each element in {"data": <element>} so arrow_json can parse it
-    let wrapped: Vec<serde_json::Value> =
-        arr.iter().map(|v| serde_json::json!({"data": v})).collect();
-
-    json_obj_to_arrow_struct(&serde_json::Value::Array(wrapped))
 }
 
 #[cfg(test)]
@@ -199,7 +350,7 @@ mod tests {
 
     #[test]
     fn test_json_to_arrow_int64() {
-        let arr = json_value_to_arrow_array(&serde_json::json!(42)).unwrap();
+        let arr = json_value_to_arrow_array(&serde_json::json!(42), None).unwrap();
         assert_eq!(arr.len(), 1);
         let int_arr = arr
             .as_any()
@@ -211,7 +362,7 @@ mod tests {
     #[test]
     #[allow(clippy::approx_constant)]
     fn test_json_to_arrow_float64() {
-        let arr = json_value_to_arrow_array(&serde_json::json!(3.14)).unwrap();
+        let arr = json_value_to_arrow_array(&serde_json::json!(3.14), None).unwrap();
         assert_eq!(arr.len(), 1);
         let float_arr = arr
             .as_any()
@@ -222,7 +373,7 @@ mod tests {
 
     #[test]
     fn test_json_to_arrow_string() {
-        let arr = json_value_to_arrow_array(&serde_json::json!("hello")).unwrap();
+        let arr = json_value_to_arrow_array(&serde_json::json!("hello"), None).unwrap();
         assert_eq!(arr.len(), 1);
         let str_arr = arr
             .as_any()
@@ -233,7 +384,7 @@ mod tests {
 
     #[test]
     fn test_json_to_arrow_bool() {
-        let arr = json_value_to_arrow_array(&serde_json::json!(true)).unwrap();
+        let arr = json_value_to_arrow_array(&serde_json::json!(true), None).unwrap();
         assert_eq!(arr.len(), 1);
         let bool_arr = arr
             .as_any()
@@ -242,9 +393,108 @@ mod tests {
         assert!(bool_arr.value(0));
     }
 
+    // ── DataType hint tests ──────────────────────────────────────
+
+    #[test]
+    fn test_json_to_arrow_int32() {
+        let dt = arrow::datatypes::DataType::Int32;
+        let arr = json_value_to_arrow_array(&serde_json::json!(42), Some(&dt)).unwrap();
+        let int_arr = arr
+            .as_any()
+            .downcast_ref::<arrow::array::Int32Array>()
+            .expect("should be Int32Array from Int32 hint");
+        assert_eq!(int_arr.value(0), 42);
+    }
+
+    #[test]
+    fn test_json_to_arrow_int8() {
+        let dt = arrow::datatypes::DataType::Int8;
+        let arr = json_value_to_arrow_array(&serde_json::json!(100), Some(&dt)).unwrap();
+        let int_arr = arr
+            .as_any()
+            .downcast_ref::<arrow::array::Int8Array>()
+            .expect("should be Int8Array from Int8 hint");
+        assert_eq!(int_arr.value(0), 100);
+    }
+
+    #[test]
+    fn test_json_to_arrow_uint8() {
+        let dt = arrow::datatypes::DataType::UInt8;
+        let arr = json_value_to_arrow_array(&serde_json::json!(255), Some(&dt)).unwrap();
+        let uint_arr = arr
+            .as_any()
+            .downcast_ref::<arrow::array::UInt8Array>()
+            .expect("should be UInt8Array from UInt8 hint");
+        assert_eq!(uint_arr.value(0), 255);
+    }
+
+    #[test]
+    fn test_json_to_arrow_uint8_overflow() {
+        let dt = arrow::datatypes::DataType::UInt8;
+        // 256 is out of range for u8
+        let result = json_value_to_arrow_array(&serde_json::json!(256), Some(&dt));
+        assert!(result.is_err());
+        assert!(
+            format!("{}", result.unwrap_err()).contains("out of range for UInt8"),
+            "error should mention out of range"
+        );
+    }
+
+    #[test]
+    fn test_json_to_arrow_uint8_negative() {
+        let dt = arrow::datatypes::DataType::UInt8;
+        // Negative numbers cannot be represented as unsigned
+        let result = json_value_to_arrow_array(&serde_json::json!(-1), Some(&dt));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_json_to_arrow_float32() {
+        let dt = arrow::datatypes::DataType::Float32;
+        let arr = json_value_to_arrow_array(&serde_json::json!(3.14), Some(&dt)).unwrap();
+        let float_arr = arr
+            .as_any()
+            .downcast_ref::<arrow::array::Float32Array>()
+            .expect("should be Float32Array from Float32 hint");
+        assert!((float_arr.value(0) - 3.14f32).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_json_to_arrow_large_utf8() {
+        let dt = arrow::datatypes::DataType::LargeUtf8;
+        let arr = json_value_to_arrow_array(&serde_json::json!("hello"), Some(&dt)).unwrap();
+        let str_arr = arr
+            .as_any()
+            .downcast_ref::<arrow::array::LargeStringArray>()
+            .expect("should be LargeStringArray from LargeUtf8 hint");
+        assert_eq!(str_arr.value(0), "hello");
+    }
+
+    #[test]
+    fn test_json_to_arrow_int64_explicit() {
+        let dt = arrow::datatypes::DataType::Int64;
+        let arr = json_value_to_arrow_array(&serde_json::json!(42), Some(&dt)).unwrap();
+        let int_arr = arr
+            .as_any()
+            .downcast_ref::<arrow::array::Int64Array>()
+            .expect("should be Int64Array from Int64 hint");
+        assert_eq!(int_arr.value(0), 42);
+    }
+
+    #[test]
+    fn test_json_to_arrow_int16() {
+        let dt = arrow::datatypes::DataType::Int16;
+        let arr = json_value_to_arrow_array(&serde_json::json!(42), Some(&dt)).unwrap();
+        let int_arr = arr
+            .as_any()
+            .downcast_ref::<arrow::array::Int16Array>()
+            .expect("should be Int16Array from Int16 hint");
+        assert_eq!(int_arr.value(0), 42);
+    }
+
     #[test]
     fn test_json_to_arrow_null_panics() {
-        let result = json_value_to_arrow_array(&serde_json::Value::Null);
+        let result = json_value_to_arrow_array(&serde_json::Value::Null, None);
         assert!(result.is_err());
         assert!(
             format!("{}", result.unwrap_err()).contains("null"),

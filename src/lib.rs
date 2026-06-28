@@ -53,7 +53,29 @@
 //!
 //! Reusable binary nodes that emit test data from files and capture + assert
 //! outputs.  Drop them into a real YAML dataflow alongside the node under
-//! test. *(Planned — Week 5–8)*
+//! test. *(Library + CLI: Week 5; integration tests: Week 6–8)*
+//!
+//! ```ignore
+//! use dora_test_utils::source::{run_test_source, SourceConfig};
+//! use dora_test_utils::sink::{run_test_sink, SinkConfig};
+//!
+//! // Source: emit test data from a JSON file.
+//! let config = SourceConfig {
+//!     output_id: "data".into(),
+//!     data: serde_json::json!({"data": [42, 99], "data_type": "Int32"}),
+//! };
+//! run_test_source(config)?;
+//!
+//! // Sink: capture and compare with expected output.
+//! let config = SinkConfig {
+//!     expected_file: "expected.json".into(),
+//!     output_file: "result.json".into(),
+//!     fail_on_mismatch: true,
+//!     strict: false,
+//! };
+//! let result = run_test_sink(config)?;
+//! assert!(result.r#match);
+//! ```
 //!
 //! ## 3. Regression testing — Record / Replay
 //!
@@ -76,7 +98,8 @@
 //! | E2E tests | Implemented — `tests/e2e.rs`: 5 tests covering input pipeline, output path, run_to_completion, full pipeline, Arrow data |
 //! | [`MockEventStream`] | Fully implemented + 3 tests |
 //! | [`MockOutputSender`] / [`OutputCollector`] | Fully implemented + 3 tests |
-//! | TestSource / TestSink binaries | Week 5 |
+//! | [`TestSource`][crate::source] library + CLI binary | Implemented — JSON→Arrow with `data_type` hint (Int8–UInt64, Float32/64, LargeUtf8); CLI: `--data-file`/`--inline-data` |
+//! | [`TestSink`][crate::sink] library + CLI binary | Implemented — strict (JSON round-trip) + semantic (Arrow equality) comparison; CLI: `--expected-file`/`--strict`/`--no-fail-on-mismatch` |
 //! | Integration tests | Week 6–8 |
 //! | Record / Replay | Week 13–17 (extended) |
 //!

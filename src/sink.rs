@@ -79,6 +79,15 @@ pub fn run_test_sink(config: SinkConfig) -> eyre::Result<SinkResult> {
         vec![expected_data]
     };
 
+    // ── 1b. Parse expected data_type for semantic comparison ────
+    let expected_data_type: Option<arrow::datatypes::DataType> = expected_json
+        .get("data_type")
+        .map(|dt| {
+            serde_json::from_value(dt.clone())
+                .with_context(|| format!("invalid expected data_type: {dt}"))
+        })
+        .transpose()?;
+
     // ── 2. Initialize DORA node ──────────────────────────────────
     let (_node, mut events) =
         DoraNode::init_from_env().context("failed to initialize DORA node")?;
@@ -98,9 +107,9 @@ pub fn run_test_sink(config: SinkConfig) -> eyre::Result<SinkResult> {
 
     // ── 4. Compare ────────────────────────────────────────────────
     let result = if config.strict {
-        compare_strict(&expected_elements, &received)
+        compare_strict(&expected_elements, &received)?
     } else {
-        compare_semantic(&expected_elements, &received)
+        compare_semantic(&expected_elements, &received, expected_data_type.as_ref())
     };
 
     // ── 5. Write result ──────────────────────────────────────────
@@ -112,43 +121,94 @@ pub fn run_test_sink(config: SinkConfig) -> eyre::Result<SinkResult> {
         )
     })?;
 
+    if config.fail_on_mismatch && !result.r#match {
+        eyre::bail!(
+            "{} difference(s) found: expected {} item(s), received {}",
+            result.differences.len(),
+            result.expected_count,
+            result.received_count
+        );
+    }
+
     Ok(result)
 }
 
-/// Strict comparison: serialize received Arrow data back to JSON, compare with serde_json::Value equality.
+/// Shared comparison loop: walk two sequences element-by-element,
+/// delegating the actual comparison to a closure.  The closure receives
+/// `(Option<&E>, Option<&R>, index)` and returns `Some(Difference)`
+/// when the elements don't match.
+fn compare_sequences<E, R>(
+    expected: &[E],
+    received: &[R],
+    mut compare_element: impl FnMut(Option<&E>, Option<&R>, usize) -> Option<Difference>,
+) -> SinkResult {
+    let mut differences = Vec::new();
+
+    if expected.len() != received.len() {
+        differences.push(Difference {
+            index: None,
+            message: format!(
+                "count mismatch: expected {} but got {}",
+                expected.len(),
+                received.len()
+            ),
+        });
+    }
+
+    let max_len = expected.len().max(received.len());
+    for i in 0..max_len {
+        let exp = expected.get(i);
+        let rec = received.get(i);
+        if let Some(diff) = compare_element(exp, rec, i) {
+            differences.push(diff);
+        }
+    }
+
+    SinkResult {
+        r#match: differences.is_empty(),
+        expected_count: expected.len(),
+        received_count: received.len(),
+        differences,
+    }
+}
+
+/// Strict comparison: serialize received Arrow data back to JSON,
+/// compare with serde_json::Value equality.
+///
+/// # Errors
+///
+/// Returns an error if any received Arrow array cannot be serialized
+/// to JSON (e.g. unsupported types like `List`, `Struct`, `Union`).
 fn compare_strict(
     expected: &[&serde_json::Value],
     received: &[arrow::array::ArrayRef],
-) -> SinkResult {
+) -> eyre::Result<SinkResult> {
     use arrow::array::RecordBatch;
     use arrow::datatypes::{Field, Schema};
     use arrow_json::writer::{JsonArray, Writer};
     use std::sync::Arc;
 
-    let mut differences = Vec::new();
-
-    // Serialize received data to JSON
+    // Serialize each received Arrow array to JSON.
     let received_json: Vec<serde_json::Value> = received
         .iter()
         .map(|array| {
             let schema = Schema::new(vec![Field::new("data", array.data_type().clone(), true)]);
-            let batch =
-                RecordBatch::try_new(Arc::new(schema), vec![array.clone()]).expect("valid batch");
+            let batch = RecordBatch::try_new(Arc::new(schema), vec![array.clone()])
+                .context("failed to create RecordBatch from received Arrow array")?;
 
             let mut buf = Vec::new();
             let mut writer = Writer::<_, JsonArray>::new(&mut buf);
-            writer.write(&batch).expect("write should succeed");
-            writer.finish().expect("finish should succeed");
+            writer
+                .write(&batch)
+                .context("failed to serialize Arrow array to JSON (type may be unsupported by JsonArray writer)")?;
+            writer.finish().context("failed to finish JSON writer")?;
 
-            let json_str = String::from_utf8(buf).expect("valid utf-8");
-            serde_json::from_str::<serde_json::Value>(&json_str).unwrap_or(serde_json::Value::Null)
+            serde_json::from_slice(&buf)
+                .context("invalid JSON produced by arrow_json writer")
         })
-        .collect();
+        .collect::<eyre::Result<Vec<_>>>()?;
 
     // Flatten JSON array output into individual elements for comparison.
-    // Each element produced by arrow_json::Writer<JsonArray> wraps the data
-    // in a RecordBatch structure: `{"data": actual_value}`. We unwrap it
-    // here so that the comparison works against raw expected JSON values.
     let received_flat: Vec<&serde_json::Value> = received_json
         .iter()
         .flat_map(|v| {
@@ -167,138 +227,92 @@ fn compare_strict(
         })
         .collect();
 
-    if received_flat.len() != expected.len() {
-        differences.push(Difference {
-            index: None,
-            message: format!(
-                "count mismatch: expected {} but got {}",
-                expected.len(),
-                received_flat.len()
-            ),
-        });
-    }
-
-    let max_len = expected.len().max(received_flat.len());
-    for i in 0..max_len {
-        let exp = expected.get(i);
-        let rec = received_flat.get(i);
-        match (exp, rec) {
-            (Some(e), Some(r)) if e == r => {} // match
-            (Some(e), Some(r)) => {
-                differences.push(Difference {
-                    index: Some(i),
-                    message: format!("value mismatch at index {i}: expected {e}, got {r}"),
-                });
-            }
-            (Some(_), None) => {
-                differences.push(Difference {
-                    index: Some(i),
-                    message: format!("missing received value at index {i}"),
-                });
-            }
-            (None, Some(_)) => {
-                differences.push(Difference {
-                    index: Some(i),
-                    message: format!("unexpected extra value at index {i}"),
-                });
-            }
-            (None, None) => unreachable!(),
-        }
-    }
-
-    SinkResult {
-        r#match: differences.is_empty(),
-        expected_count: expected.len(),
-        received_count: received_flat.len(),
-        differences,
-    }
+    Ok(compare_sequences(
+        expected,
+        &received_flat,
+        |exp, rec, i| match (exp, rec) {
+            (Some(e), Some(r)) if e == r => None,
+            (Some(e), Some(r)) => Some(Difference {
+                index: Some(i),
+                message: format!("value mismatch at index {i}: expected {e}, got {r}"),
+            }),
+            (Some(_), None) => Some(Difference {
+                index: Some(i),
+                message: format!("missing received value at index {i}"),
+            }),
+            (None, Some(_)) => Some(Difference {
+                index: Some(i),
+                message: format!("unexpected extra value at index {i}"),
+            }),
+            (None, None) => unreachable!("max_len guarantees at least one is Some"),
+        },
+    ))
 }
 
-/// Semantic comparison: parse expected JSON into Arrow arrays, compare with received Arrow data.
+/// Semantic comparison: convert expected JSON into Arrow arrays
+/// (using the same conversion logic as [`TestSource`]),
+/// then compare with the received Arrow data element-by-element.
+///
+/// Respects `expected_data_type` from the expected file so that
+/// e.g. `Int32` expected values are converted to `Int32Array` rather
+/// than the default `Int64Array`.
 fn compare_semantic(
     expected: &[&serde_json::Value],
     received: &[arrow::array::ArrayRef],
+    expected_data_type: Option<&arrow::datatypes::DataType>,
 ) -> SinkResult {
-    let mut differences = Vec::new();
+    use std::sync::Arc;
 
-    // Convert expected JSON values to Arrow arrays
+    // Convert expected JSON values to Arrow arrays, including objects/arrays.
+    // Record conversion errors as Difference entries for diagnostic clarity.
+    let mut differences_from_conversion = Vec::new();
     let expected_arrays: Vec<arrow::array::ArrayRef> = expected
         .iter()
-        .filter_map(|v| {
-            // Use the same conversion logic as source (inline for simplicity)
-            match v {
-                serde_json::Value::Number(n) => {
-                    if let Some(i) = n.as_i64() {
-                        Some(std::sync::Arc::new(arrow::array::Int64Array::from(vec![i]))
-                            as arrow::array::ArrayRef)
-                    } else if let Some(f) = n.as_f64() {
-                        Some(
-                            std::sync::Arc::new(arrow::array::Float64Array::from(vec![f]))
-                                as arrow::array::ArrayRef,
-                        )
-                    } else {
-                        None
-                    }
+        .enumerate()
+        .map(|(i, v)| {
+            match crate::source::json_value_to_arrow_array(v, expected_data_type) {
+                Ok(arr) => arr,
+                Err(e) => {
+                    differences_from_conversion.push(Difference {
+                        index: Some(i),
+                        message: format!(
+                            "conversion error at index {i}: {e:#}. Original value: {v}"
+                        ),
+                    });
+                    // Use 0-length NullArray placeholder so loop proceeds.
+                    Arc::new(arrow::array::NullArray::new(0))
                 }
-                serde_json::Value::String(s) => Some(std::sync::Arc::new(
-                    arrow::array::StringArray::from(vec![s.as_str()]),
-                ) as arrow::array::ArrayRef),
-                serde_json::Value::Bool(b) => Some(std::sync::Arc::new(
-                    arrow::array::BooleanArray::from(vec![*b]),
-                ) as arrow::array::ArrayRef),
-                _ => None,
             }
         })
         .collect();
 
-    // received is already Vec<ArrayRef>, just clone it
-    let received_arrays: Vec<arrow::array::ArrayRef> = received.to_vec();
-
-    if received_arrays.len() != expected_arrays.len() {
-        differences.push(Difference {
-            index: None,
-            message: format!(
-                "count mismatch: expected {} but got {}",
-                expected_arrays.len(),
-                received_arrays.len()
-            ),
+    let mut result =
+        compare_sequences(&expected_arrays, received, |exp, rec, i| match (exp, rec) {
+            (Some(e), Some(r)) if e == r => None,
+            (Some(e), Some(r)) => Some(Difference {
+                index: Some(i),
+                message: format!("value mismatch at index {i}: expected {e:?}, got {r:?}"),
+            }),
+            (Some(_), None) => Some(Difference {
+                index: Some(i),
+                message: format!("missing received value at index {i}"),
+            }),
+            (None, Some(_)) => Some(Difference {
+                index: Some(i),
+                message: format!("unexpected extra value at index {i}"),
+            }),
+            (None, None) => unreachable!("max_len guarantees at least one is Some"),
         });
+
+    // Prepend conversion errors to the differences list so they appear
+    // before any comparison mismatches in the output.
+    if !differences_from_conversion.is_empty() {
+        differences_from_conversion.append(&mut result.differences);
+        result.differences = differences_from_conversion;
+        result.r#match = result.differences.is_empty();
     }
 
-    let max_len = expected_arrays.len().max(received_arrays.len());
-    for i in 0..max_len {
-        let exp = expected_arrays.get(i);
-        let rec = received_arrays.get(i);
-        match (exp, rec) {
-            (Some(e), Some(r)) if e == r => {} // match
-            (Some(e), Some(r)) => {
-                differences.push(Difference {
-                    index: Some(i),
-                    message: format!("value mismatch at index {i}: expected {e:?}, got {r:?}"),
-                });
-            }
-            (Some(_), None) => {
-                differences.push(Difference {
-                    index: Some(i),
-                    message: format!("missing received value at index {i}"),
-                });
-            }
-            (None, Some(_)) => {
-                differences.push(Difference {
-                    index: Some(i),
-                    message: format!("unexpected extra value at index {i}"),
-                });
-            }
-            (None, None) => unreachable!(),
-        }
-    }
-
-    SinkResult {
-        r#match: differences.is_empty(),
-        expected_count: expected_arrays.len(),
-        received_count: received_arrays.len(),
-        differences,
-    }
+    result
 }
 
 #[cfg(test)]
@@ -339,7 +353,7 @@ mod tests {
             Arc::new(arrow::array::Int64Array::from(vec![42])),
             Arc::new(arrow::array::Int64Array::from(vec![99])),
         ];
-        let result = compare_semantic(&expected, &received);
+        let result = compare_semantic(&expected, &received, None);
         assert!(result.r#match);
         assert_eq!(result.expected_count, 2);
         assert_eq!(result.received_count, 2);
@@ -353,7 +367,7 @@ mod tests {
         let expected: Vec<&serde_json::Value> = vec![&v1, &v2];
         let received: Vec<arrow::array::ArrayRef> =
             vec![Arc::new(arrow::array::Int64Array::from(vec![1]))];
-        let result = compare_semantic(&expected, &received);
+        let result = compare_semantic(&expected, &received, None);
         assert!(!result.r#match);
         assert_eq!(result.expected_count, 2);
         assert_eq!(result.received_count, 1);
@@ -366,7 +380,7 @@ mod tests {
         let expected: Vec<&serde_json::Value> = vec![&v42];
         let received: Vec<arrow::array::ArrayRef> =
             vec![Arc::new(arrow::array::Int64Array::from(vec![99]))];
-        let result = compare_semantic(&expected, &received);
+        let result = compare_semantic(&expected, &received, None);
         assert!(!result.r#match);
         assert_eq!(result.differences.len(), 1);
         assert_eq!(result.differences[0].index, Some(0));
@@ -377,7 +391,7 @@ mod tests {
         let v1 = serde_json::json!(1);
         let expected: Vec<&serde_json::Value> = vec![&v1];
         let received: Vec<arrow::array::ArrayRef> = vec![];
-        let result = compare_semantic(&expected, &received);
+        let result = compare_semantic(&expected, &received, None);
         assert!(!result.r#match);
         assert_eq!(result.received_count, 0);
         assert_eq!(result.expected_count, 1);
@@ -389,7 +403,7 @@ mod tests {
         let expected: Vec<&serde_json::Value> = vec![&v42];
         let received: Vec<arrow::array::ArrayRef> =
             vec![Arc::new(arrow::array::Int64Array::from(vec![42]))];
-        let result = compare_strict(&expected, &received);
+        let result = compare_strict(&expected, &received).unwrap();
         assert!(result.r#match);
     }
 
@@ -399,7 +413,7 @@ mod tests {
         let expected: Vec<&serde_json::Value> = vec![&v42];
         let received: Vec<arrow::array::ArrayRef> =
             vec![Arc::new(arrow::array::Int64Array::from(vec![99]))];
-        let result = compare_strict(&expected, &received);
+        let result = compare_strict(&expected, &received).unwrap();
         assert!(!result.r#match);
     }
 }
