@@ -70,7 +70,10 @@ fn run_echo_pipeline(
     let output_file = tmp.path().join("result.json");
 
     std::fs::write(&source_file, serde_json::to_string_pretty(source_data)?)?;
-    std::fs::write(&expected_file, serde_json::to_string_pretty(expected_output)?)?;
+    std::fs::write(
+        &expected_file,
+        serde_json::to_string_pretty(expected_output)?,
+    )?;
 
     // ── Generate YAML dataflow with absolute paths ────────────
     let source_bin = bin_path("test-source");
@@ -141,12 +144,7 @@ fn run_echo_pipeline(
 
     // ── Run dora run ──────────────────────────────────────────
     let output = Command::new("dora")
-        .args([
-            "run",
-            yaml_file.to_str().unwrap(),
-            "--stop-after",
-            "10s",
-        ])
+        .args(["run", yaml_file.to_str().unwrap(), "--stop-after", "10s"])
         .output()?;
 
     if !output.status.success() {
@@ -165,11 +163,8 @@ fn run_echo_pipeline(
             output_file.display()
         )
     })?;
-    let result: SinkResult = serde_json::from_str(&result_json).map_err(|e| {
-        eyre::eyre!(
-            "invalid JSON in result.json: {e}\ncontent: {result_json}"
-        )
-    })?;
+    let result: SinkResult = serde_json::from_str(&result_json)
+        .map_err(|e| eyre::eyre!("invalid JSON in result.json: {e}\ncontent: {result_json}"))?;
 
     Ok(result)
 }
