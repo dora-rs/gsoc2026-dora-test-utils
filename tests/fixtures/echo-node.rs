@@ -15,7 +15,11 @@ fn main() -> eyre::Result<()> {
                 node.send_output(id, MetadataParameters::default(), data.0)
                     .map_err(|e| eyre::eyre!("echo-node: send_output failed: {e}"))?;
             }
-            Event::Stop(_) | Event::InputClosed { .. } => break,
+            Event::Stop(_) => break,
+            // InputClosed means one source has closed — don't break,
+            // because there may still be buffered Input events from
+            // that source in the pipeline.  Only Stop ends the loop.
+            Event::InputClosed { .. } => {}
             _ => {}
         }
     }
