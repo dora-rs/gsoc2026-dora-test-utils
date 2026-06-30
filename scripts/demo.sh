@@ -96,7 +96,7 @@ echo ""
 # ─── 7. Library unit tests ───────────────────────────────
 banner "7. Library unit tests"
 
-UNIT_RESULT=$(timeout 30 cargo test --lib 2>&1 | grep "test result" || echo "  (timed out — known daemon timing issue, all other tests pass)")
+UNIT_RESULT=$(timeout 30 cargo test --lib 2>&1 | grep "test result" || echo "  (timed out — known daemon timing issue)")
 echo "$UNIT_RESULT"
 
 # ─── Done ────────────────────────────────────────────────
@@ -105,7 +105,7 @@ banner "Demo Complete"
 echo -e "${GREEN}${BOLD}Summary:${NC}"
 echo "  • Echo pipeline: test-source → echo-node → test-sink"
 echo "  • Integration tests: 4/4 passing"
-echo "  • Library unit tests: 33/36 passing (3 known daemon-timing skips)"
+echo "  • Library unit tests: $(echo "$UNIT_RESULT" | grep -o '[0-9]\+ passed' || echo 'see above')"
 echo ""
 echo -e "${CYAN}Repo:${NC} https://github.com/SunSunSun689/gsoc2026-dora-test-utils"
 echo -e "${CYAN}Branch:${NC} week5"
