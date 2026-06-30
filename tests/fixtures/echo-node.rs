@@ -19,6 +19,9 @@ fn main() -> eyre::Result<()> {
             // InputClosed means one source has closed — don't break,
             // because there may still be buffered Input events from
             // that source in the pipeline.  Only Stop ends the loop.
+            // `dora run --stop-after` guarantees Stop is always sent;
+            // in production dataflows the coordinator sends Stop on
+            // shutdown, so an infinite loop is not reachable.
             Event::InputClosed { .. } => {}
             _ => {}
         }

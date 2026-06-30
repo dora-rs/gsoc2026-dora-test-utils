@@ -13,6 +13,7 @@ use dora_test_utils::sink::SinkResult;
 use serial_test::serial;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::OnceLock;
 
 /// Check whether `dora` CLI is available.
 fn dora_available() -> bool {
@@ -35,33 +36,39 @@ fn bin_path(name: &str) -> PathBuf {
     Path::new(&target_dir).join(profile).join(name)
 }
 
-/// Ensure all required binaries are built.
+/// Ensure all required binaries are built (cached — only builds once per process).
 fn build_binaries() {
-    let mut args = vec![
-        "build",
-        "--bin",
-        "test_source",
-        "--bin",
-        "test-sink",
-        "--bin",
-        "echo-node",
-    ];
-    if !cfg!(debug_assertions) {
-        args.push("--release");
-    }
-    let status = Command::new("cargo")
-        .args(&args)
-        .status()
-        .expect("cargo build should succeed");
-    assert!(status.success(), "cargo build failed");
+    static BUILT: OnceLock<()> = OnceLock::new();
+    BUILT.get_or_init(|| {
+        let mut args = vec![
+            "build",
+            "--bin",
+            "test_source",
+            "--bin",
+            "test-sink",
+            "--bin",
+            "echo-node",
+        ];
+        if !cfg!(debug_assertions) {
+            args.push("--release");
+        }
+        let status = Command::new("cargo")
+            .args(&args)
+            .status()
+            .expect("cargo build should succeed");
+        assert!(status.success(), "cargo build failed");
+    });
 }
 
 /// Find the dora CLI binary.
 fn dora_binary() -> PathBuf {
-    // Check the vendored dora workspace build first.
-    let vendored = Path::new("dora/target/debug/dora");
-    if vendored.exists() {
-        return vendored.to_path_buf();
+    // Check the vendored dora workspace build first — try both
+    // debug and release profiles (debug is more common in dev).
+    for profile in &["debug", "release"] {
+        let vendored = Path::new("dora/target").join(profile).join("dora");
+        if vendored.exists() {
+            return vendored;
+        }
     }
     // Fall back to PATH.
     PathBuf::from("dora")
@@ -145,7 +152,14 @@ fn run_echo_pipeline(
     // ── Run dora run ──────────────────────────────────────────
     let dora = dora_binary();
     let output = Command::new(&dora)
-        .args(["run", yaml_file.to_str().unwrap(), "--stop-after", "10s"])
+        .args([
+            "run",
+            yaml_file
+                .to_str()
+                .expect("temp dir path must be valid UTF-8"),
+            "--stop-after",
+            "10s",
+        ])
         .output()
         .map_err(|e| eyre::eyre!("failed to run dora ({}): {e}", dora.display()))?;
 

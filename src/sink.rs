@@ -342,30 +342,7 @@ fn compare_semantic(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
     use std::sync::Arc;
-
-    /// Helper: write expected data to a temp file and return the path.
-    #[allow(dead_code)]
-    fn write_expected_file(data: &serde_json::Value) -> tempfile::NamedTempFile {
-        let mut file = tempfile::NamedTempFile::new().unwrap();
-        write!(file, "{}", serde_json::to_string(data).unwrap()).unwrap();
-        file
-    }
-
-    /// Helper: create a SinkConfig pointing at a temp expected file.
-    #[allow(dead_code)]
-    fn sink_config(expected: &serde_json::Value) -> (SinkConfig, tempfile::NamedTempFile) {
-        let file = write_expected_file(expected);
-        let output = tempfile::NamedTempFile::new().unwrap();
-        let config = SinkConfig {
-            expected_file: file.path().to_path_buf(),
-            output_file: output.path().to_path_buf(),
-            fail_on_mismatch: true,
-            strict: false,
-        };
-        (config, file)
-    }
 
     #[test]
     fn test_compare_semantic_exact_match() {
