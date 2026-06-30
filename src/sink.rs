@@ -253,6 +253,13 @@ fn compare_strict(
 /// (using the same conversion logic as [`TestSource`]),
 /// then compare with the received Arrow data element-by-element.
 ///
+/// Unlike [`compare_strict`], this tolerates **compatible type
+/// differences** — e.g. `Int32Array([1, 2])` is considered equal to
+/// `Int64Array([1, 2])` because the values are the same.  This is
+/// achieved by casting the received array to the expected type
+/// before comparing (falling back to exact comparison if the cast
+/// fails, e.g. due to overflow).
+///
 /// Respects `expected_data_type` from the expected file so that
 /// e.g. `Int32` expected values are converted to `Int32Array` rather
 /// than the default `Int64Array`.
@@ -288,11 +295,28 @@ fn compare_semantic(
 
     let mut result =
         compare_sequences(&expected_arrays, received, |exp, rec, i| match (exp, rec) {
-            (Some(e), Some(r)) if e == r => None,
-            (Some(e), Some(r)) => Some(Difference {
-                index: Some(i),
-                message: format!("value mismatch at index {i}: expected {e:?}, got {r:?}"),
-            }),
+            (Some(e), Some(r)) => {
+                // Semantic equality: if the received array has a
+                // different Arrow type, try casting it to the
+                // expected type first (e.g. Int64 → Int32).
+                // If the cast succeeds and values match, the
+                // arrays are semantically equal.
+                let matches = if e.data_type() == r.data_type() {
+                    e == r
+                } else {
+                    arrow::compute::cast(r, e.data_type())
+                        .map(|casted| e.as_ref() == casted.as_ref())
+                        .unwrap_or(false)
+                };
+                if matches {
+                    None
+                } else {
+                    Some(Difference {
+                        index: Some(i),
+                        message: format!("value mismatch at index {i}: expected {e:?}, got {r:?}"),
+                    })
+                }
+            }
             (Some(_), None) => Some(Difference {
                 index: Some(i),
                 message: format!("missing received value at index {i}"),
@@ -415,5 +439,46 @@ mod tests {
             vec![Arc::new(arrow::array::Int64Array::from(vec![99]))];
         let result = compare_strict(&expected, &received).unwrap();
         assert!(!result.r#match);
+    }
+
+    #[test]
+    fn test_compare_semantic_cross_type_int32_vs_int64() {
+        // Expected is Int32, received is Int64 — semantic comparison
+        // should match because the numeric values are equal.
+        let v1 = serde_json::json!(1);
+        let v2 = serde_json::json!(2);
+        let expected: Vec<&serde_json::Value> = vec![&v1, &v2];
+        let received: Vec<arrow::array::ArrayRef> = vec![
+            Arc::new(arrow::array::Int64Array::from(vec![1])),
+            Arc::new(arrow::array::Int64Array::from(vec![2])),
+        ];
+        // Pass Int32 as the expected data type hint.
+        let result = compare_semantic(
+            &expected,
+            &received,
+            Some(&arrow::datatypes::DataType::Int32),
+        );
+        assert!(
+            result.r#match,
+            "semantic comparison should tolerate Int32 expected vs Int64 received; got {result:#?}"
+        );
+        assert!(result.differences.is_empty());
+    }
+
+    #[test]
+    fn test_compare_semantic_cross_type_float32_vs_float64() {
+        let v1 = serde_json::json!(1.0);
+        let expected: Vec<&serde_json::Value> = vec![&v1];
+        let received: Vec<arrow::array::ArrayRef> =
+            vec![Arc::new(arrow::array::Float64Array::from(vec![1.0]))];
+        let result = compare_semantic(
+            &expected,
+            &received,
+            Some(&arrow::datatypes::DataType::Float32),
+        );
+        assert!(
+            result.r#match,
+            "semantic comparison should tolerate Float32 expected vs Float64 received"
+        );
     }
 }
