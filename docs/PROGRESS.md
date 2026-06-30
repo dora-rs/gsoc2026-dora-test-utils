@@ -129,173 +129,138 @@ pub fn init_testing(
 
 ---
 
-## Week 3–5 (Next: Pending Week 2 PR merge): Core Implementation
+## Week 3–4 (COMPLETED 2026-06-14): Core Harness + IntoInputData
 
-### Planned (Week 3)
+### Completed
 
-- [ ] **Receive mentor feedback** on Q1/Q2 (DORA commit + init_testing usage)
-- [ ] **Implement NodeHarness::new()** calling `DoraNode::init_testing()`
-  - [ ] Create TestingInput / TestingOutput wrappers
-  - [ ] Wire mock channels into EventStream
-- [ ] **Implement send_input / recv_output / tick**
-  - [ ] `send_input(id, ArrayData) -> Result<()>` → inject into mock EventStream
-  - [ ] `recv_output(id) -> Vec<ArrayData>` → drain from OutputCollector
-  - [ ] `tick() -> Result<()>` → drive one event loop iteration
-- [ ] **Write end-to-end unit test:** create harness → send input → tick → verify output
+- [x] **NodeHarness fully implemented** (`src/harness.rs` — 402 lines)
+  - [x] `new()`, `send_input()`, `send_data()`, `send_stop()`, `send_output()`
+  - [x] `tick()`, `recv_output()`, `close_input()`, `run_to_completion()`
+- [x] **IntoInputData trait** (`src/traits.rs` — 137 lines)
+  - [x] `serde_json::Value` impl, `arrow::array::ArrayData` impl
+- [x] **MockEventStream + MockOutputSender** (`src/mock/` — 298 lines)
+- [x] **E2E tests** (`tests/e2e.rs`) — 5 tests covering full pipeline
 
-### Planned (Week 4)
+---
 
-- [ ] **Implement run_to_completion()**
-  - [ ] Loop tick() until input channel exhausted + no pending events
-  - [ ] Write tests: batch-run multi-input scenario
-- [ ] **API freeze confirmation** — no more public signature changes after this week
+## Week 5 (COMPLETED 2026-06-28): TestSource / TestSink
 
-### Planned (Week 5)
+### Completed
 
-- [ ] **TestSourceNode binary** (`src/bin/test_source.rs`)
-  - [ ] Read Arrow JSON from file / inline
-  - [ ] CLI: `--output-id`, `--data-file`, `--inline-data`
-  - [ ] Emit data on specified output
-- [ ] **TestSinkNode binary** (`src/bin/test_sink.rs`)
-  - [ ] Receive input, compare with expected file
-  - [ ] `--expected-file`, `--fail-on-mismatch` flags
-  - [ ] Exit code: 0 on match, non-zero on mismatch
-- [ ] **Preparatory work for integration tests** (requires both binaries)
+- [x] **TestSource library** (`src/source.rs` — 504 lines)
+  - [x] `run_test_source(SourceConfig) -> Result<()>`
+  - [x] `json_value_to_arrow_array()` with `data_type` hint (Int8–UInt64, Float32/64, LargeUtf8)
+  - [x] Type inference: Int64/Float64/String/Boolean defaults
+  - [x] Batch JSON parsing via `arrow_json::ReaderBuilder`
+  - [x] 17 unit tests
+- [x] **TestSource CLI** (`src/bin/test_source.rs` — 66 lines)
+  - [x] `--output-id`, `--data-file`, `--inline-data` flags
+- [x] **TestSink library** (`src/sink.rs` — 488 lines)
+  - [x] `run_test_sink(SinkConfig) -> Result<SinkResult>`
+  - [x] `compare_strict` (JSON round-trip) + `compare_semantic` (Arrow equality with cross-type tolerance)
+  - [x] `SinkResult` / `Difference` serializable types
+  - [x] `compare_sequences<E,R>()` generic helper
+  - [x] 8 unit tests (including cross-type semantic comparison)
+- [x] **TestSink CLI** (`src/bin/test-sink.rs` — 69 lines)
+  - [x] `--expected-file`, `--output-file`, `--strict`, `--no-fail-on-mismatch` flags
+- [x] **2 code review rounds** — 12 bugs fixed (2 Critical, 4 High, 5 Important, 1 Medium)
+
+---
+
+## Week 6 (COMPLETED 2026-06-30): Integration Tests + Midterm Prep
+
+### Completed
+
+- [x] **Echo node fixture** (`tests/fixtures/echo-node.rs` — 28 lines)
+  - [x] Pass-through: receives Input, sends same data as Output
+  - [x] Handles `InputClosed` gracefully (doesn't break, waits for `Stop`)
+- [x] **YAML dataflow template** (`tests/fixtures/echo-dataflow.yml`)
+  - [x] `test-source → echo-node → test-sink` pipeline
+- [x] **Sample data fixtures** (`tests/fixtures/source-data.json`, `expected-output.json`)
+- [x] **Integration test framework** (`tests/integration.rs` — 300 lines)
+  - [x] `run_echo_pipeline()` — generates YAML, runs `dora run`, asserts `SinkResult`
+  - [x] `build_binaries()` — cached (OnceLock), profile-aware
+  - [x] `dora_binary()` — checks vendored debug + release paths, falls back to PATH
+  - [x] 4 integration tests (exact match, cross-type tolerance, 10 elements, strings)
+- [x] **Demo script** (`scripts/demo.sh`)
+  - [x] Build → show dataflow → run pipeline → show result → integration tests → unit tests
+  - [x] Robust error handling: exit codes tracked, timeouts distinguished from failures
+- [x] **Midterm report** (`docs/MIDTERM-REPORT.md`)
+- [x] **Max-effort code review** — 15 findings, all fixed
 
 ### Current file structure
 
 ```
 gsoc2026-dora-test-utils/
-├── Cargo.toml                     # (TEMP: path dep for TestingInput::Channel dev)
+├── Cargo.toml
 ├── Cargo.lock
 ├── src/
 │   ├── lib.rs                     # Crate docs + status table + re-exports
-│   ├── harness.rs                 # NodeHarness (live channels, send/recv/tick)
-│   └── mock/
-│       ├── mod.rs                 # Mock module docs
-│       ├── event_stream.rs        # MockEventStream (✅ full impl + 3 tests)
-│       └── output.rs              # MockOutputSender + OutputCollector (✅ + 3 tests)
+│   ├── harness.rs                 # NodeHarness (402 lines)
+│   ├── traits.rs                  # IntoInputData trait (137 lines)
+│   ├── source.rs                  # TestSource library (515 lines)
+│   ├── sink.rs                    # TestSink library (480 lines)
+│   ├── mock/
+│   │   ├── mod.rs                 # Mock module (23 lines)
+│   │   ├── event_stream.rs        # MockEventStream (111 lines)
+│   │   └── output.rs              # MockOutputSender + OutputCollector (164 lines)
+│   └── bin/
+│       ├── test_source.rs         # test-source CLI (66 lines)
+│       └── test-sink.rs           # test-sink CLI (69 lines)
 ├── tests/
-│   ├── smoke.rs                   # 3 smoke tests (harness construction + mock pairs)
-│   └── e2e.rs                     # 1 E2E test (send_input → tick → verify events)
-├── dora/                          # Vendored dora source (TestingInput::Channel changes)
+│   ├── smoke.rs                   # 3 smoke tests
+│   ├── e2e.rs                     # 5 E2E tests
+│   ├── integration.rs             # 4 integration tests (+ test runner)
+│   └── fixtures/
+│       ├── echo-node.rs           # Echo pass-through node (28 lines)
+│       ├── echo-dataflow.yml      # YAML dataflow template
+│       ├── source-data.json       # Sample input
+│       └── expected-output.json   # Sample expected output
+├── scripts/
+│   └── demo.sh                    # Midterm demo script
+├── dora/                          # Vendored dora source
 ├── docs/
 │   ├── PROGRESS.md                # This file
-│   ├── WEEK1-2_SUMMARY.md         # Week 1-2 summary
-│   ├── WEEKLY_PLAN.md             # Detailed weekly plan
-│   ├── PR-REVIEW/                 # Mentor PR reviews
+│   ├── MIDTERM-REPORT.md          # GSoC midterm evaluation report
+│   ├── proposal.pdf               # Accepted GSoC proposal
 │   └── superpowers/               # Design specs + implementation plans
 │       ├── specs/
 │       └── plans/
 ├── .github/workflows/
-│   └── ci.yml                     # check / test / clippy / fmt
+│   └── ci.yml
 ├── CLAUDE.md
 ├── README.md
-├── LICENSE
-└── docs/proposal.pdf
+└── LICENSE
 ```
 
 ---
 
-## 📋 TO DO (Prioritized by Week)
+## 📋 Next: Week 7–8 (Coding Phase 2)
 
-### 🔴 Critical Path (Blocking)
+### Week 7–8: Edge Cases + CI
+- [ ] **Edge case tests**
+  - [ ] Empty data arrays → verify clear error
+  - [ ] Type mismatches → verify correct Difference reporting
+  - [ ] Large data batches → verify no performance regression
+  - [ ] Multi-input/multi-output dataflows
+- [ ] **CI integration**
+  - [ ] Build dora CLI in CI workflow
+  - [ ] Run integration tests in CI (requires dora + port 6013)
+  - [ ] Add integration test job to `.github/workflows/ci.yml`
 
-#### Week 3 (高优先级) ✅ COMPLETE (2026-06-09)
-- [x] **Q1: DORA commit pin** — ✅ Locked to 45436aad (2026-06-07)
-- [x] **Q2: init_testing() signature** — ✅ Found in dora source code
-- [x] **Add TestingInput::Channel upstream** — ✅ Added Channel variant in vendored dora source
-- [x] **NodeHarness::new()** — ✅ Uses TestingInput::Channel + TestingOutput::ToChannel
-- [x] **NodeHarness::send_input()** — ✅ Pushes TimedIncomingEvent through live flume channel
-- [x] **NodeHarness::send_stop()** — ✅ Convenience wrapper
-- [x] **NodeHarness::send_output()** — ✅ Delegates to DoraNode::send_output (known deadlock after tick)
-- [x] **NodeHarness::recv_output()** — ✅ Drains output buffers by ID
-- [x] **NodeHarness::tick()** — ✅ Synchronous, polls EventStream::recv(), collects outputs
-- [x] **End-to-end test** — ✅ `tests/e2e.rs`: send_input → tick → verify Input + Stop events
-- [x] **Code review bugs fixed** — ✅ Typo, error variant, unwrap panic resolved
+### Week 9–10: Example Pipelines
+- [ ] Example dataflows (echo, classifier, multi-node)
+- [ ] Comprehensive integration tests
+- [ ] README usage examples
 
-#### Week 4 (高优先级) ✅ COMPLETE (2026-06-14)
-- [x] **NodeHarness::run_to_completion()** — Batch mode
-  - [x] Loop tick() until event stream exhausted
-  - [x] Break on Event::Stop or Event::InputClosed
-  - [x] Auto-calls close_input() to unblock daemon thread
-  - [x] Returns Vec<Event> for assertion in tests
-- [x] **send_output deadlock fix**
-  - [x] input_tx changed to Option<Sender> for controlled drop
-  - [x] Added close_input() method — drops sender to unblock daemon thread
-  - [x] run_to_completion() auto-calls close_input()
-- [x] **E2E test coverage extended**
-  - [x] e2e_send_output_and_recv — pure output path (close_input → send_output → recv_output)
-  - [x] e2e_run_to_completion_returns_events — batch mode with output after completion
-  - [x] e2e_full_pipeline_input_to_output — full input → completion → output pipeline
-- [x] **API Freeze** — Lock public signatures
-  - [x] All NodeHarness public methods finalized (new, send_input, send_stop, send_output, tick, recv_output, close_input, run_to_completion)
+### Week 11–12: Polish + Midterm Evaluation
+- [ ] Documentation (API docs, setup guide, usage guide)
+- [ ] Mentor feedback integration
+- [ ] Midterm evaluation submission (deadline: 2026-07-10)
 
-#### Week 5 (中优先级)
-- [ ] **TestSourceNode binary** (`src/bin/test_source.rs`)
-  - [ ] Accept CLI args: `--output-id`, `--data-file` OR `--inline-data`
-  - [ ] Load Arrow JSON from file or parse inline JSON
-  - [ ] Spawn as DORA node in dataflow
-  - [ ] Emit loaded data on specified output
-  - [ ] Unit + integration tests
-- [ ] **TestSinkNode binary** (`src/bin/test_sink.rs`)
-  - [ ] Accept CLI args: `--expected-file`, `--fail-on-mismatch`
-  - [ ] Receive input from dataflow
-  - [ ] Compare with expected Arrow JSON (byte-for-byte or semantic)
-  - [ ] Write result file (`result.json` or similar)
-  - [ ] Exit code: 0 (match) / 1 (mismatch)
-  - [ ] Unit + integration tests
-
-### 🟡 Medium Priority (Non-blocking)
-
-#### Week 6–8 (中优先级)
-- [ ] **Source + Sink integration tests**
-  - [ ] 3-node dataflow: TestSource → Node → TestSink
-  - [ ] `dora run` end-to-end validation
-  - [ ] Multiple input/output scenarios
-  - [ ] Error propagation (source read error, sink comparison fail)
-
-#### Week 9–10 (低优先级)
-- [ ] **Example pipelines**
-  - [ ] Example 1: Single-node unit test with NodeHarness
-  - [ ] Example 2: Multi-node YAML + TestSource/Sink
-  - [ ] Example 3: Complex dataflow (fan-out, merging)
-  - [ ] CI integration: Run examples in workflow
-  - [ ] Docs: Each example with README + expected output
-
-#### Week 11–12 (低优先级)
-- [ ] **Documentation**
-  - [ ] API rustdoc (NodeHarness, MockEventStream, MockOutputSender, OutputCollector)
-  - [ ] Setup Guide (clone, build, first test)
-  - [ ] Usage Guide (unit testing, integration testing, regression testing)
-  - [ ] README polish: Quick start, feature matrix, limitations
-- [ ] **Mentor review + polish**
-  - [ ] Code review feedback integration
-  - [ ] Test coverage audit
-  - [ ] Mid-term evaluation prep
-
-### 🟢 Extended Scope (Post-MVP, 350h only)
-
-#### Week 13–14 (扩展功能)
-- [ ] **RecordSession** — Capture real dataflow I/O
-  - [ ] Intercept all inter-node messages
-  - [ ] Serialize to `integration_testing_format.rs` JSON
-  - [ ] Write to `tests/fixtures/run_*.json`
-
-#### Week 15–17 (扩展功能)
-- [ ] **ReplaySession** — Deterministic replay
-  - [ ] Load recorded session file
-  - [ ] Reinject events to node
-  - [ ] Collect outputs
-  - [ ] `assert_no_regression()` helper
-
-#### Week 18–20 (扩展功能)
-- [ ] **Python bindings** (PyO3)
-  - [ ] Expose NodeHarness to Python
-  - [ ] Test Python nodes via harness
-- [ ] **CI template** — GitHub Actions preset
-  - [ ] Example workflow: unit + integration + regression tests
-  - [ ] Reusable job templates
+### Extended Scope (Post-Midterm)
+- [ ] Record/Replay (Week 13–17)
+- [ ] Python bindings (Week 18–20)
 
 ---
 
@@ -313,14 +278,27 @@ gsoc2026-dora-test-utils/
 
 ## 📊 Metrics & Checkpoints
 
-| Checkpoint | Target | Current | Status |
-|-----------|--------|---------|--------|
+| Checkpoint | Target | Actual | Status |
+|-----------|--------|--------|--------|
 | Week 1–2 API design | 7/7 deliverables | 7/7 | ✅ |
-| Week 2 Mock impl | 6 unit + 3 smoke tests passing | 9/9 | ✅ |
-| Week 2 NodeHarness::new() | Skeleton calling init_testing() | ✅ | ✅ |
-| Week 3 NodeHarness core | 6 methods (send_input/send_stop/send_output/tick/recv_output/new) + E2E test | 10/10 tests passing | ✅ |
-| Week 4 NodeHarness complete | close_input + run_to_completion + 3 new E2E tests | 13/13 tests passing | ✅ |
-| Week 5 Binaries | TestSource + TestSink | 0/2 | ⏳ |
-| Week 11 Docs | API + Setup + Usage | 0/3 | ⏳ |
-| **Mid-term eval (Week 12)** | MVP complete | TBD | ⏳ |
-| **Final submission (Week 20)** | Extended complete | TBD | ⏳ |
+| Week 2 Mock impl | 6 unit + 3 smoke tests | 9/9 passing | ✅ |
+| Week 3 NodeHarness core | 6 methods + E2E test | 10/10 passing | ✅ |
+| Week 4 NodeHarness complete | close_input + run_to_completion | 13/13 passing | ✅ |
+| Week 5 Binaries | TestSource + TestSink | 25 tests | ✅ |
+| Week 6 Integration tests | Echo pipeline + demo | 4/4 integration, 39 unit | ✅ |
+| **Mid-term eval (Week 6)** | MVP complete | Ahead of schedule | 🚀 |
+| Week 7–8 Edge cases + CI | TBD | TBD | ⏳ |
+| **Final submission** | Extended complete | TBD | ⏳ |
+
+### Code Metrics (Week 6 snapshot)
+
+| Metric | Value |
+|--------|-------|
+| Total Rust source files | 10 |
+| Total lines (src/ + tests/) | ~2,500 |
+| Library unit tests | 39 |
+| E2E tests | 5 |
+| Integration tests | 4 |
+| Mock tests | 3 |
+| CI gates (fmt, clippy, test) | All passing |
+| Code review rounds | 3 (max-effort, 27 findings fixed) |
