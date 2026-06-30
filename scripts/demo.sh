@@ -23,6 +23,10 @@ step() {
     echo -e "${GREEN}▶ $1${NC}"
 }
 
+warn() {
+    echo -e "${RED}⚠ $1${NC}"
+}
+
 # ─── 0. Prerequisites ────────────────────────────────────
 banner "0. Check prerequisites"
 
@@ -33,17 +37,26 @@ rustc --version
 # ─── 1. Build all binaries ───────────────────────────────
 banner "1. Build all binaries"
 
-step "Build test-source..."
-cargo build --bin test_source 2>&1 | tail -1
+BUILD_LOG=$(mktemp)
+trap "rm -f $BUILD_LOG" EXIT
 
-step "Build test-sink..."
-cargo build --bin test-sink 2>&1 | tail -1
-
-step "Build echo-node..."
-cargo build --bin echo-node 2>&1 | tail -1
+step "Build test_source, test-sink, echo-node..."
+if cargo build --bin test_source --bin test-sink --bin echo-node > "$BUILD_LOG" 2>&1; then
+    tail -1 "$BUILD_LOG"
+else
+    warn "Build failed! Last 20 lines:"
+    tail -20 "$BUILD_LOG"
+    exit 1
+fi
 
 step "Build dora CLI..."
-PYO3_NO_PYTHON=1 cargo build --manifest-path dora/Cargo.toml -p dora-cli 2>&1 | tail -1
+if PYO3_NO_PYTHON=1 cargo build --manifest-path dora/Cargo.toml -p dora-cli > "$BUILD_LOG" 2>&1; then
+    tail -1 "$BUILD_LOG"
+else
+    warn "dora CLI build failed! Last 20 lines:"
+    tail -20 "$BUILD_LOG"
+    exit 1
+fi
 
 DORA="dora/target/debug/dora"
 
@@ -65,24 +78,40 @@ banner "4. Run echo pipeline"
 
 echo "Starting dora run..."
 echo ""
-$DORA run tests/fixtures/echo-dataflow.yml --stop-after 10s 2>&1 | grep -E "(spawning|ready|finished|match|error)" || true
+DORA_LOG=$(mktemp)
+set +e
+$DORA run tests/fixtures/echo-dataflow.yml --stop-after 10s > "$DORA_LOG" 2>&1
+DORA_EXIT=$?
+set -e
+grep -E "(spawning|ready|finished|match|error)" "$DORA_LOG" || true
+rm -f "$DORA_LOG"
+if [ $DORA_EXIT -ne 0 ]; then
+    warn "dora run exited with code $DORA_EXIT"
+fi
 echo ""
 
 # ─── 5. Show result ──────────────────────────────────────
 banner "5. Pipeline result"
 
+# dora spawns nodes with CWD = YAML directory, but also check cwd.
+RESULT_FILE=""
 if [ -f tests/fixtures/result.json ]; then
-    cat tests/fixtures/result.json
+    RESULT_FILE="tests/fixtures/result.json"
+elif [ -f result.json ]; then
+    RESULT_FILE="result.json"
+fi
+
+if [ -n "$RESULT_FILE" ]; then
+    cat "$RESULT_FILE"
     echo ""
 
-    # Check match field
-    if grep -q '"match": true' tests/fixtures/result.json; then
+    if grep -q '"match": true' "$RESULT_FILE"; then
         echo -e "${GREEN}${BOLD}✅ Pipeline PASSED — all 3 values matched!${NC}"
     else
         echo -e "${RED}${BOLD}❌ Pipeline FAILED${NC}"
     fi
 else
-    echo -e "${RED}result.json not found — pipeline may have failed${NC}"
+    warn "result.json not found (checked tests/fixtures/ and ./)"
 fi
 
 # ─── 6. Integration tests ────────────────────────────────
@@ -90,14 +119,32 @@ banner "6. Integration test suite"
 
 echo "Running 4 automated integration tests..."
 echo ""
-cargo test --test integration -- --test-threads=1 --nocapture 2>&1 | grep -E "(test echo|test result|FAILED)" || true
+INTEGRATION_EXIT=0
+cargo test --test integration -- --test-threads=1 --nocapture 2>&1 | grep -E "(test echo|test result|FAILED)" || INTEGRATION_EXIT=$?
 echo ""
+if [ $INTEGRATION_EXIT -ne 0 ]; then
+    warn "some integration tests may have failed (grep found no matches)"
+fi
 
 # ─── 7. Library unit tests ───────────────────────────────
 banner "7. Library unit tests"
 
-UNIT_RESULT=$(timeout 30 cargo test --lib 2>&1 | grep "test result" || echo "  (timed out — known daemon timing issue)")
-echo "$UNIT_RESULT"
+UNIT_LOG=$(mktemp)
+set +e
+timeout 30 cargo test --lib > "$UNIT_LOG" 2>&1
+UNIT_EXIT=$?
+set -e
+
+UNIT_RESULT=$(grep "test result" "$UNIT_LOG" || true)
+if [ $UNIT_EXIT -eq 124 ]; then
+    echo "  (timed out after 30s — known daemon timing issue)"
+elif [ $UNIT_EXIT -ne 0 ]; then
+    warn "unit tests failed with exit code $UNIT_EXIT"
+    echo "$UNIT_RESULT"
+else
+    echo "$UNIT_RESULT"
+fi
+rm -f "$UNIT_LOG"
 
 # ─── Done ────────────────────────────────────────────────
 banner "Demo Complete"
