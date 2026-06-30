@@ -37,16 +37,20 @@ fn bin_path(name: &str) -> PathBuf {
 
 /// Ensure all required binaries are built.
 fn build_binaries() {
+    let mut args = vec![
+        "build",
+        "--bin",
+        "test_source",
+        "--bin",
+        "test-sink",
+        "--bin",
+        "echo-node",
+    ];
+    if !cfg!(debug_assertions) {
+        args.push("--release");
+    }
     let status = Command::new("cargo")
-        .args([
-            "build",
-            "--bin",
-            "test_source",
-            "--bin",
-            "test-sink",
-            "--bin",
-            "echo-node",
-        ])
+        .args(&args)
         .status()
         .expect("cargo build should succeed");
     assert!(status.success(), "cargo build failed");
@@ -145,24 +149,34 @@ fn run_echo_pipeline(
         .output()
         .map_err(|e| eyre::eyre!("failed to run dora ({}): {e}", dora.display()))?;
 
+    // ── Try to parse result.json even on dora run failure ─────
+    // test-sink writes result.json before exiting, so structured
+    // Difference data is available even when fail_on_mismatch
+    // causes a non-zero exit.
+    let result_json = std::fs::read_to_string(&output_file);
+    let sink_result: Option<SinkResult> =
+        result_json.ok().and_then(|s| serde_json::from_str(&s).ok());
+
     if !output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
+        // Augment the error with SinkResult details when available.
+        if let Some(ref sr) = sink_result {
+            eyre::bail!(
+                "dora run failed with status {}\n\
+                 SinkResult: {sr:#?}\n\
+                 --- dora stdout ---\n{stdout}\n--- dora stderr ---\n{stderr}",
+                output.status
+            );
+        }
         eyre::bail!(
             "dora run failed with status {}\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}",
             output.status
         );
     }
 
-    // ── Parse result ──────────────────────────────────────────
-    let result_json = std::fs::read_to_string(&output_file).map_err(|e| {
-        eyre::eyre!(
-            "failed to read result.json at {}: {e}",
-            output_file.display()
-        )
-    })?;
-    let result: SinkResult = serde_json::from_str(&result_json)
-        .map_err(|e| eyre::eyre!("invalid JSON in result.json: {e}\ncontent: {result_json}"))?;
+    let result =
+        sink_result.ok_or_else(|| eyre::eyre!("result.json missing after successful dora run"))?;
 
     Ok(result)
 }
@@ -211,11 +225,12 @@ fn echo_pipeline_semantic_int32_tolerates_int64() {
     }
     build_binaries();
 
-    // Source emits Int32 values, but the actual Arrow type default is Int64.
-    // Semantic comparison should still match because numeric values are the same.
+    // Source emits with the default Int64 inference (no data_type hint),
+    // but the expected file declares Int32.  Semantic comparison should
+    // still match because the numeric values [1, 2, 3] are within Int32
+    // range and the cast Int64→Int32 succeeds.
     let source = serde_json::json!({
-        "data": [1, 2, 3],
-        "data_type": "Int32"
+        "data": [1, 2, 3]
     });
     let expected = serde_json::json!({
         "data": [1, 2, 3],

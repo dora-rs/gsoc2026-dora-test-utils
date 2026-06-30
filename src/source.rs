@@ -198,8 +198,9 @@ fn number_to_arrow_array(
                 eyre::bail!("value {n} is not representable as Float64")
             }
         }
-        // For unsupported type hints, fall through to inference.
-        _ => {
+        // When the caller didn't request a specific type, infer from the
+        // JSON number's shape (integer → Int64, float → Float64).
+        None => {
             if let Some(i) = n.as_i64() {
                 Ok(Arc::new(arrow::array::Int64Array::from(vec![i])))
             } else if let Some(f) = n.as_f64() {
@@ -207,6 +208,15 @@ fn number_to_arrow_array(
             } else {
                 eyre::bail!("unsupported number value: {n}")
             }
+        }
+        // The caller explicitly requested a type this function doesn't
+        // know how to produce (e.g. Timestamp, Date32, Decimal128).
+        // Don't silently fall back to Int64 — report the gap.
+        Some(dt) => {
+            eyre::bail!(
+                "data_type {dt:?} is not supported for number-to-arrow conversion; \
+                 supported types: Int8–Int64, UInt8–UInt64, Float32, Float64"
+            );
         }
     }
 }
@@ -499,6 +509,20 @@ mod tests {
         assert!(
             format!("{}", result.unwrap_err()).contains("null"),
             "error should mention null"
+        );
+    }
+
+    #[test]
+    fn test_json_to_arrow_unsupported_type_hint_errors() {
+        // Timestamp is a valid Arrow type but not supported by number_to_arrow_array.
+        let dt =
+            arrow::datatypes::DataType::Timestamp(arrow::datatypes::TimeUnit::Millisecond, None);
+        let result = json_value_to_arrow_array(&serde_json::json!(42), Some(&dt));
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(
+            msg.contains("not supported"),
+            "error should mention unsupported type, got: {msg}"
         );
     }
 }
