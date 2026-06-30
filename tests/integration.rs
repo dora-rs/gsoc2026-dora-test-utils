@@ -16,7 +16,8 @@ use std::process::Command;
 
 /// Check whether `dora` CLI is available.
 fn dora_available() -> bool {
-    Command::new("dora")
+    let dora = dora_binary();
+    Command::new(&dora)
         .arg("--version")
         .output()
         .map(|o| o.status.success())
@@ -40,7 +41,7 @@ fn build_binaries() {
         .args([
             "build",
             "--bin",
-            "test-source",
+            "test_source",
             "--bin",
             "test-sink",
             "--bin",
@@ -49,6 +50,17 @@ fn build_binaries() {
         .status()
         .expect("cargo build should succeed");
     assert!(status.success(), "cargo build failed");
+}
+
+/// Find the dora CLI binary.
+fn dora_binary() -> PathBuf {
+    // Check the vendored dora workspace build first.
+    let vendored = Path::new("dora/target/debug/dora");
+    if vendored.exists() {
+        return vendored.to_path_buf();
+    }
+    // Fall back to PATH.
+    PathBuf::from("dora")
 }
 
 /// Run a test-source → echo-node → test-sink pipeline and return the result.
@@ -76,40 +88,28 @@ fn run_echo_pipeline(
     )?;
 
     // ── Generate YAML dataflow with absolute paths ────────────
-    let source_bin = bin_path("test-source");
+    let source_bin = bin_path("test_source");
     let echo_bin = bin_path("echo-node");
     let sink_bin = bin_path("test-sink");
 
-    let sink_args_yaml = if sink_extra_args.is_empty() {
+    let source_extra = if source_extra_args.is_empty() {
         String::new()
     } else {
-        sink_extra_args
-            .iter()
-            .map(|a| format!("      - {a}\n"))
-            .collect::<Vec<_>>()
-            .join("")
+        format!(" {}", source_extra_args.join(" "))
     };
 
-    let source_extra_yaml = if source_extra_args.is_empty() {
+    let sink_extra = if sink_extra_args.is_empty() {
         String::new()
     } else {
-        source_extra_args
-            .iter()
-            .map(|a| format!("      - {a}\n"))
-            .collect::<Vec<_>>()
-            .join("")
+        format!(" {}", sink_extra_args.join(" "))
     };
 
     let yaml = format!(
         r#"nodes:
   - id: test-source
     path: {source_bin}
-    args:
-      - --output-id
-      - data
-      - --data-file
-      - {source_file}
-{source_extra_yaml}    outputs:
+    args: "--output-id data --data-file {source_file}{source_extra}"
+    outputs:
       - data
 
   - id: echo-node
@@ -123,29 +123,27 @@ fn run_echo_pipeline(
     path: {sink_bin}
     inputs:
       data: echo-node/data
-    args:
-      - --expected-file
-      - {expected_file}
-      - --output-file
-      - {output_file}
-{sink_args_yaml}"#,
+    args: "--expected-file {expected_file} --output-file {output_file}{sink_extra}"
+"#,
         source_bin = source_bin.display(),
         echo_bin = echo_bin.display(),
         sink_bin = sink_bin.display(),
         source_file = source_file.display(),
         expected_file = expected_file.display(),
         output_file = output_file.display(),
-        source_extra_yaml = source_extra_yaml,
-        sink_args_yaml = sink_args_yaml,
+        source_extra = source_extra,
+        sink_extra = sink_extra,
     );
 
     let yaml_file = tmp.path().join("dataflow.yml");
     std::fs::write(&yaml_file, yaml)?;
 
     // ── Run dora run ──────────────────────────────────────────
-    let output = Command::new("dora")
+    let dora = dora_binary();
+    let output = Command::new(&dora)
         .args(["run", yaml_file.to_str().unwrap(), "--stop-after", "10s"])
-        .output()?;
+        .output()
+        .map_err(|e| eyre::eyre!("failed to run dora ({}): {e}", dora.display()))?;
 
     if !output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
