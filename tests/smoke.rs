@@ -1,18 +1,27 @@
 //! Smoke tests for the dora-test-utils crate.
 //!
 //! These tests verify that the public API types can be constructed and
-//! composed.  They don't yet exercise the internal logic, which depends
-//! on wiring up real DORA types (pending the dora-node-api dependency).
+//! composed with a real DORA node in testing mode.
 
 use dora_test_utils::mock::event_stream::MockEventStream;
 use dora_test_utils::mock::output::MockOutputSender;
 use dora_test_utils::NodeHarness;
 
-/// `NodeHarness` should be constructable via `new()` and `Default`.
+/// `NodeHarness::new()` creates a real DORA node with live channels,
+/// and `send_input` → `tick` drives one event through the node.
+///
+/// Uses `#[test]` (not `#[tokio::test]`) because `init_testing()`
+/// internally uses `blocking_recv`, which panics inside a tokio runtime.
 #[test]
-fn harness_construction() {
-    let _h1 = NodeHarness::new();
-    let _h2 = NodeHarness::default();
+fn harness_construction_and_tick() {
+    let mut harness = NodeHarness::new().expect("NodeHarness::new should succeed");
+
+    // Send Stop so the node's event loop exits cleanly.
+    harness.send_stop();
+
+    // Drive one iteration — the node should receive Stop.
+    let event = harness.tick();
+    assert!(event.is_some());
 }
 
 /// `MockEventStream::new()` should return both a stream and a sender.

@@ -23,17 +23,10 @@ issues and discussions when needed.
 
 ## Milestones
 
-- `Community Bonding` — May–Jun 2026
-  - [x] Week 1–2: Design NodeHarness API + scaffold crate (see [PROGRESS.md](PROGRESS.md))
-  - [ ] Week 3–5: Implement NodeHarness, MockEventStream, MockOutputSender
-  - [ ] Week 6–8: Implement TestSourceNode / TestSinkNode binaries
-  - [ ] Week 9–10: Example pipelines + integration tests
-  - [ ] Week 11–12: Polish docs, mentor feedback
-- `Coding Phase 1` — Jun–Jul 2026 (ends at midterm eval)
-- `Coding Phase 2` — Jul–Aug 2026
-- `Final Submission` — Aug–Sep 2026
-
-Exact end-dates filled in from Google's published 2026 timeline.
+- `Community Bonding` — ends 2026-05-24 23:59 UTC
+- `Coding Phase 1` — ends 2026-07-10 23:59 UTC (Midterm evaluation deadline)
+- `Coding Phase 2` — ends 2026-08-24 23:59 UTC
+- `Final Submission` — standard 2026-08-24 23:59 UTC; extension to 2026-11-02 in approved cases.
 
 ## Workflow
 
