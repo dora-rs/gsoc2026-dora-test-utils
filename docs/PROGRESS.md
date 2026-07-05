@@ -23,10 +23,11 @@
 | Decision | Rationale |
 |---|---|
 | Crate at repo root (not `libraries/test-utils/`) | Standalone repo; path matches dora monorepo only when merged upstream |
-| `arrow = "53"` | Matches the Arrow version DORA uses for inter-node data |
-| `tokio` for mock channels | `mpsc` channels replace daemon socket; same runtime as DORA |
+| `arrow = "58"` | Matches the Arrow version DORA uses for inter-node data (upgraded from 53 in Week 2) |
+| `flume` for output capture | `TestingOutput::ToChannel` uses flume; same channel crate DORA uses internally |
+| `tokio` for mock channels | Mock types use `tokio::sync::mpsc` channels; same runtime as DORA |
 | Stub-only (no real impl yet) | Week 1–2 scope is design + scaffold; implementation starts Week 3 |
-| `dora-node-api` NOT yet a dependency | Need to confirm the exact git rev / crate name with mentor before wiring up |
+| `dora-node-api` pinned to `45436aad` | Confirmed with mentor; locked to specific commit for reproducibility |
 
 ---
 
@@ -36,7 +37,7 @@
 
 - [x] **Clone & audit DORA source** at `dora/` (commit 45436aad)
 - [x] **Post mentor discussion** with 4 questions in GitHub Discussions
-- [x] **Update Cargo.toml** with `dora-node-api` = { git = "...", branch = "main" }
+- [x] **Update Cargo.toml** with `dora-node-api` = { git = "...", rev = "45436aad" }
 - [x] **Implement MockOutputSender** (complete with unit tests)
   - [x] `MockOutputSender::send(output_id, ArrayData) -> Result<()>` ✅
   - [x] `OutputCollector` buffer & indexing by output_id ✅
@@ -50,11 +51,18 @@
 - [x] **Cargo.toml adjustments**
   - [x] Upgrade Arrow from 53 → 58 (matches DORA main branch)
   - [x] Add futures = "0.3" for Stream trait compatibility
-- [x] **NodeHarness::new() skeleton implemented** (2026-06-07)
-  - [x] Calls `DoraNode::init_testing()` with `TestingInput::Input(...)` + `TestingOutput::ToWriter(sink())`
-  - [x] Stores `(DoraNode, EventStream)` + mock channel handles (`input_tx`, `output_collector`)
-  - [x] `send_input` / `tick` / `recv_output` / `run_to_completion` remain `todo!()` (Week 3)
-  - [x] `#[allow(dead_code)]` on fields — intentionally unused at skeleton stage
+- [x] **NodeHarness fully wired** (2026-06-07, rewired 2026-06-09 per mentor feedback)
+  - [x] Calls `DoraNode::init_testing()` with `TestingInput::Channel(rx)` + `TestingOutput::ToChannel(tx)`
+  - [x] Both legs live: input via flume channel for runtime injection, output via flume for capture
+  - [x] Returns `Result<Self, NodeError>` instead of panicking
+  - [x] `send_input(TimedIncomingEvent)` implemented — pushes events through live channel
+  - [x] `send_stop()` convenience method added
+  - [x] `tick()` uses synchronous `EventStream::recv()` (blocking — consistent with `init_testing`)
+  - [x] `recv_output()` drains flume-based output buffers (returns JSON maps per DORA format)
+  - [x] Field order ensures clean shutdown: `input_tx` dropped first → unblocks daemon thread
+  - [x] Upstream dora change: added `TestingInput::Channel(flume::Receiver<TimedIncomingEvent>)` variant
+  - [x] Upstream dora change: added `EventSource` enum to `IntegrationTestingEvents` for channel support
+  - [x] Smoke test passes: create harness → send_stop → tick → assert event received
 - [x] **Bug fix: MockEventStream hanging tests**
   - [x] `test_mock_event_stream_multiple_events` — drop `tx` before checking `None`
   - [x] `test_mock_event_stream_multiple_senders` — drop `tx1` + `tx2` before checking `None`
@@ -97,12 +105,27 @@ pub fn init_testing(
 
 **EventStream:** Implements `futures::Stream<Item = Event>`; uses `tokio::sync::mpsc::Receiver`
 
-### Next: Week 3
+### Next: Week 3 (COMPLETED 2026-06-09)
 
-- [x] **Implement NodeHarness::new()** calling `DoraNode::init_testing()` ✅ (done Week 2)
-- [ ] **Implement send_input / recv_output / tick**
-- [ ] **Wire mock channels** into the event loop (replacing pre-declared TestingInput events)
-- [ ] **Write end-to-end unit tests** with real node execution
+- [x] **Implement send_input / recv_output / tick** ✅
+  - [x] `send_input(TimedIncomingEvent)` — pushes events through live flume channel
+  - [x] `send_stop()` — convenience wrapper for Stop events
+  - [x] `tick()` — synchronous, polls `EventStream::recv()`, collects outputs
+  - [x] `recv_output(id)` — drains output buffers; returns `Option<Vec<Map>>`
+- [x] **Added `TestingInput::Channel` variant upstream** (in vendored dora source)
+  - [x] `TestingInput::Channel(flume::Receiver<TimedIncomingEvent>)` in `integration_testing.rs`
+  - [x] `EventSource` enum in `node_integration_testing.rs` — supports Vec + Channel
+  - [x] `check_poisoned()` extracted as reusable helper
+- [x] **Added `NodeHarness::send_output()`** — delegates to `DoraNode::send_output`
+  - [x] Known limitation: deadlocks if called between `tick()` calls (event-stream prefetch blocks daemon)
+- [x] **Wrote end-to-end test** (`tests/e2e.rs`)
+  - [x] `e2e_receive_input_and_stop`: send_input(Input) + send_stop → tick ×2 → verify events
+- [x] **Fixed bugs from code review**
+  - [x] Typo: "Convience" → "Convenience"
+  - [x] `send_output`: `NodeError::Init` → `NodeError::Output` for invalid output_id
+  - [x] `send_output`: removed `.parse().unwrap()` panic, returns `Result` instead
+- [x] **CI gates pass**: fmt ✅ | clippy ✅ | 10/10 tests ✅ (6 unit + 3 smoke + 1 E2E)
+- [x] **Mentor feedback resolved**: Option B confirmed (init_testing + Channel), pure-mock discarded
 
 ---
 
@@ -143,29 +166,33 @@ pub fn init_testing(
 
 ```
 gsoc2026-dora-test-utils/
-├── Cargo.toml
+├── Cargo.toml                     # (TEMP: path dep for TestingInput::Channel dev)
 ├── Cargo.lock
 ├── src/
-│   ├── lib.rs                    # Crate docs + re-exports
-│   ├── harness.rs                # NodeHarness skeleton (init_testing wired)
+│   ├── lib.rs                     # Crate docs + status table + re-exports
+│   ├── harness.rs                 # NodeHarness (live channels, send/recv/tick)
 │   └── mock/
-│       ├── mod.rs                # Mock module docs
-│       ├── event_stream.rs       # MockEventStream (✅ full impl + 3 tests)
-│       └── output.rs             # MockOutputSender + OutputCollector (✅ + 3 tests)
+│       ├── mod.rs                 # Mock module docs
+│       ├── event_stream.rs        # MockEventStream (✅ full impl + 3 tests)
+│       └── output.rs              # MockOutputSender + OutputCollector (✅ + 3 tests)
 ├── tests/
-│   └── smoke.rs                  # 3 smoke tests passing
+│   ├── smoke.rs                   # 3 smoke tests (harness construction + mock pairs)
+│   └── e2e.rs                     # 1 E2E test (send_input → tick → verify events)
+├── dora/                          # Vendored dora source (TestingInput::Channel changes)
 ├── docs/
-│   ├── PROGRESS.md               # This file
-│   ├── WEEK1-2_SUMMARY.md        # Week 1-2 summary
-│   └── WEEKLY_PLAN.md            # Detailed weekly plan
+│   ├── PROGRESS.md                # This file
+│   ├── WEEK1-2_SUMMARY.md         # Week 1-2 summary
+│   ├── WEEKLY_PLAN.md             # Detailed weekly plan
+│   ├── PR-REVIEW/                 # Mentor PR reviews
+│   └── superpowers/               # Design specs + implementation plans
+│       ├── specs/
+│       └── plans/
 ├── .github/workflows/
-│   └── ci.yml                    # check / test / clippy / fmt
-├── .claude/
-│   └── settings.local.json       # Local permissions (bypass mode)
+│   └── ci.yml                     # check / test / clippy / fmt
 ├── CLAUDE.md
 ├── README.md
 ├── LICENSE
-└── proposal.pdf
+└── docs/proposal.pdf
 ```
 
 ---
@@ -174,29 +201,18 @@ gsoc2026-dora-test-utils/
 
 ### 🔴 Critical Path (Blocking)
 
-#### Week 3 (高优先级)
+#### Week 3 (高优先级) ✅ COMPLETE (2026-06-09)
 - [x] **Q1: DORA commit pin** — ✅ Locked to 45436aad (2026-06-07)
 - [x] **Q2: init_testing() signature** — ✅ Found in dora source code
-- [x] **Implement NodeHarness::new()** — Core entry point ✅ (done Week 2)
-  - [x] Wrap `DoraNode::init_testing(TestingInput, TestingOutput, TestingOptions)`
-  - [x] Wire up MockEventStream as event source (sender stored as `input_tx`)
-  - [x] Wire up MockOutputSender as output sink (collector stored as `output_collector`)
-  - [x] Handle async runtime (tokio) — `init_testing()` is synchronous
-- [ ] **NodeHarness::send_input()** — Inject test events
-  - [ ] Create Event::Input from user-provided ArrayData
-  - [ ] Push to MockEventStream mpsc channel
-  - [ ] Handle input_id validation
-- [ ] **NodeHarness::recv_output()** — Drain captured outputs
-  - [ ] Call OutputCollector::drain(output_id)
-  - [ ] Return Vec<ArrayData> or None
-- [ ] **NodeHarness::tick()** — Drive one iteration
-  - [ ] Poll node event loop once
-  - [ ] Collect any outputs via OutputCollector::collect_pending()
-- [ ] **End-to-end test** — Verify harness works
-  - [ ] Create node via harness
-  - [ ] Send synthetic Input event
-  - [ ] Call tick()
-  - [ ] Assert output received
+- [x] **Add TestingInput::Channel upstream** — ✅ Added Channel variant in vendored dora source
+- [x] **NodeHarness::new()** — ✅ Uses TestingInput::Channel + TestingOutput::ToChannel
+- [x] **NodeHarness::send_input()** — ✅ Pushes TimedIncomingEvent through live flume channel
+- [x] **NodeHarness::send_stop()** — ✅ Convenience wrapper
+- [x] **NodeHarness::send_output()** — ✅ Delegates to DoraNode::send_output (known deadlock after tick)
+- [x] **NodeHarness::recv_output()** — ✅ Drains output buffers by ID
+- [x] **NodeHarness::tick()** — ✅ Synchronous, polls EventStream::recv(), collects outputs
+- [x] **End-to-end test** — ✅ `tests/e2e.rs`: send_input → tick → verify Input + Stop events
+- [x] **Code review bugs fixed** — ✅ Typo, error variant, unwrap panic resolved
 
 #### Week 4 (高优先级)
 - [ ] **NodeHarness::run_to_completion()** — Batch mode
@@ -294,7 +310,7 @@ gsoc2026-dora-test-utils/
 | Week 1–2 API design | 7/7 deliverables | 7/7 | ✅ |
 | Week 2 Mock impl | 6 unit + 3 smoke tests passing | 9/9 | ✅ |
 | Week 2 NodeHarness::new() | Skeleton calling init_testing() | ✅ | ✅ |
-| Week 3 NodeHarness core | 4 methods + E2E test | 1/5 | ⏳ |
+| Week 3 NodeHarness core | 6 methods (send_input/send_stop/send_output/tick/recv_output/new) + E2E test | 10/10 tests passing | ✅ |
 | Week 5 Binaries | TestSource + TestSink | 0/2 | ⏳ |
 | Week 11 Docs | API + Setup + Usage | 0/3 | ⏳ |
 | **Mid-term eval (Week 12)** | MVP complete | TBD | ⏳ |

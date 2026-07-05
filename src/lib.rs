@@ -9,18 +9,32 @@
 //!
 //! Drive a single DORA node with synthetic inputs and assert its outputs
 //! **without** starting the DORA daemon or coordinator.  Works inside
-//! standard `#[test]` or `#[tokio::test]` functions.
+//! standard `#[test]` functions (NOT `#[tokio::test]` — `init_testing()`
+//! uses `blocking_recv` internally, which panics inside a tokio runtime).
 //!
 //! ```ignore
 //! use dora_test_utils::NodeHarness;
+//! use dora_node_api::integration_testing::integration_testing_format::{
+//!     IncomingEvent, TimedIncomingEvent,
+//! };
 //!
-//! #[tokio::test]
-//! async fn test_classifier_node() {
-//!     let mut harness = NodeHarness::new();
-//!     harness.send_input("image", arrow_data);
-//!     harness.tick().await;
-//!     let output = harness.recv_output("label");
-//!     assert_eq!(output, Some(vec![...]));
+//! #[test]
+//! fn test_classifier_node() {
+//!     let mut harness = NodeHarness::new()
+//!         .expect("failed to create harness");
+//!
+//!     // Inject an input event at runtime
+//!     harness.send_input(TimedIncomingEvent {
+//!         time_offset_secs: 0.0,
+//!         event: IncomingEvent::Stop,
+//!     });
+//!
+//!     // Drive one iteration (blocking — init_testing uses blocking_recv)
+//!     harness.tick();
+//!
+//!     // Assert outputs
+//!     let outputs = harness.recv_output("label");
+//!     assert!(outputs.is_some());
 //! }
 //! ```
 //!
@@ -39,28 +53,35 @@
 //!
 //! | Component | Status |
 //! |-----------|--------|
-//! | [`NodeHarness`] (struct + `new()`) | ✅ Implemented — wraps [`DoraNode::init_testing()`][init] |
-//! | [`NodeHarness::send_input()`] | ⏳ Week 3 |
-//! | [`NodeHarness::tick()`] | ⏳ Week 3 |
-//! | [`NodeHarness::recv_output()`] | ⏳ Week 3 |
-//! | [`MockEventStream`] | ✅ Fully implemented + 3 tests |
-//! | [`MockOutputSender`] / [`OutputCollector`] | ✅ Fully implemented + 3 tests |
-//! | TestSource / TestSink binaries | ⏳ Week 5 |
-//! | Integration tests | ⏳ Week 6–8 |
-//! | Record / Replay | ⏳ Week 13–17 (extended) |
+//! | [`NodeHarness`] (struct + `new()`) | Implemented — wraps [`DoraNode::init_testing()`][init] with live [`TestingInput::Channel`] + [`TestingOutput::ToChannel`] |
+//! | [`NodeHarness::send_input()`] | Implemented — pushes [`TimedIncomingEvent`] through live flume channel |
+//! | [`NodeHarness::send_stop()`] | Implemented — convenience wrapper around `send_input` for Stop events |
+//! | [`NodeHarness::send_output()`] | Implemented — delegates to [`DoraNode::send_output`]; known limitation: deadlocks if daemon thread is blocked in `next_event()` (see harness docs) |
+//! | [`NodeHarness::tick()`] | Implemented — synchronous, polls real [`EventStream`], collects outputs |
+//! | [`NodeHarness::recv_output()`] | Implemented — drains output buffers; returns `Option<Vec<Map<String, Value>>>` |
+//! | E2E test | Implemented — `tests/e2e.rs`: send_input → tick → verify events received |
+//! | [`MockEventStream`] | Fully implemented + 3 tests |
+//! | [`MockOutputSender`] / [`OutputCollector`] | Fully implemented + 3 tests |
+//! | TestSource / TestSink binaries | Week 5 |
+//! | Integration tests | Week 6–8 |
+//! | Record / Replay | Week 13–17 (extended) |
 //!
 //! ## Relationship to upstream DORA
 //!
 //! This crate extends the foundation in `dora-node-api`'s
 //! [`integration_testing`][dora-it] module ([`DoraNode::init_testing()`][init]).
-//! It does **not** replace it — rather it adds the programmatic,
-//! in-memory harness and assertion helpers that `init_testing()`
-//! currently lacks.
+//! It adds the **runtime event injection** that `init_testing()` currently
+//! lacks — via a new [`TestingInput::Channel`] variant added upstream — and
+//! the output-capture + assertion helpers.
 //!
-//! Our mock types ([`MockEventStream`], [`MockOutputSender`]) replace
-//! the daemon connection with [`tokio::sync::mpsc`] channels, enabling
-//! test code to inject inputs and capture outputs imperatively instead
-//! of pre-declaring them in JSON files.
+//! The harness uses live [`flume`] channels for both directions: input events
+//! flow from test code to the node through [`TestingInput::Channel`]; outputs
+//! flow back through [`TestingOutput::ToChannel`].  No file I/O or daemon
+//! connection required.
+//!
+//! For pure-mock testing (no real node), the standalone mock types
+//! ([`MockEventStream`], [`MockOutputSender`]) use
+//! [`tokio::sync::mpsc`] channels.
 //!
 //! [init]: https://docs.rs/dora-node-api/latest/dora_node_api/struct.DoraNode.html#method.init_testing
 //! [dora-it]: https://docs.rs/dora-node-api/latest/dora_node_api/integration_testing/
