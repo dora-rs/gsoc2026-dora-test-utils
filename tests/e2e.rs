@@ -2,9 +2,6 @@
 //!
 //! Exercises the full input pipeline: send_input → tick → receive events.
 
-use dora_node_api::integration_testing::integration_testing_format::{
-    IncomingEvent, InputData, TimedIncomingEvent,
-};
 use dora_node_api::Event;
 use dora_test_utils::NodeHarness;
 
@@ -20,17 +17,7 @@ fn e2e_receive_input_and_stop() {
     let mut harness = NodeHarness::new().expect("NodeHarness::new should succeed");
 
     // ── Send Input event with integer data ────────────────────────
-    harness.send_input(TimedIncomingEvent {
-        time_offset_secs: 0.0,
-        event: IncomingEvent::Input {
-            id: "numbers".parse().unwrap(),
-            metadata: None,
-            data: Some(Box::new(InputData::JsonObject {
-                data: serde_json::json!([1, 2, 3]),
-                data_type: None,
-            })),
-        },
-    });
+    harness.send_data("numbers", serde_json::json!([1, 2, 3]));
 
     // ── Send Stop (preload so the daemon thread doesn't block) ────
     harness.send_stop();
@@ -41,7 +28,7 @@ fn e2e_receive_input_and_stop() {
         dora_node_api::Event::Input { id, data, .. } => {
             assert_eq!(id.to_string(), "numbers");
             // Data should be non-empty (3-element Int32 array)
-            assert!(data.0.len() > 0, "input data should be non-empty");
+            assert!(!data.0.is_empty(), "input data should be non-empty");
         }
         other => panic!("expected Input event, got {other:?}"),
     }
@@ -103,17 +90,7 @@ fn e2e_run_to_completion_returns_events() {
     let mut harness = NodeHarness::new().expect("NodeHarness::new should succeed");
 
     // Pre-load an Input event with data.
-    harness.send_input(TimedIncomingEvent {
-        time_offset_secs: 0.0,
-        event: IncomingEvent::Input {
-            id: "step1".parse().unwrap(),
-            metadata: None,
-            data: Some(Box::new(InputData::JsonObject {
-                data: serde_json::json!([42]),
-                data_type: None,
-            })),
-        },
-    });
+    harness.send_data("step1", serde_json::json!([42]));
 
     // No need to call send_stop() — run_to_completion handles it.
     // Run to completion.
@@ -153,17 +130,7 @@ fn e2e_full_pipeline_input_to_output() {
     let mut harness = NodeHarness::new().expect("NodeHarness::new should succeed");
 
     // Phase 1: Send input, drive to completion (no manual Stop needed).
-    harness.send_input(TimedIncomingEvent {
-        time_offset_secs: 0.0,
-        event: IncomingEvent::Input {
-            id: "data_in".parse().unwrap(),
-            metadata: None,
-            data: Some(Box::new(InputData::JsonObject {
-                data: serde_json::json!([1, 2, 3, 4, 5]),
-                data_type: None,
-            })),
-        },
-    });
+    harness.send_data("data_in", serde_json::json!([1, 2, 3, 4, 5]));
 
     let events = harness.run_to_completion();
     // Verify both Input and Stop were received.
@@ -197,5 +164,47 @@ fn e2e_full_pipeline_input_to_output() {
             output.contains_key("data"),
             "each output should contain 'data'"
         );
+    }
+}
+
+/// send_data with Arrow ArrayData: verify Arrow->JSON->Input round-trip.
+#[test]
+fn e2e_send_data_arrow_input() {
+    use arrow::array::{Array, Int32Array};
+
+    let mut harness = NodeHarness::new().expect("NodeHarness::new should succeed");
+
+    // Inject Arrow data via the convenience method.
+    let array = Int32Array::from(vec![100, 200, 300]).into_data();
+    harness.send_data("arrow_numbers", array);
+    harness.send_stop();
+
+    // Tick — verify the data was received with correct values.
+    let event = harness.tick().expect("should receive Input");
+    match event {
+        Event::Input { id, data, .. } => {
+            assert_eq!(id.to_string(), "arrow_numbers");
+            // Verify content: data arrived (non-empty). The Arrow→JSON→Arrow
+            // round-trip may change the concrete Arrow type (e.g. Int32→Struct),
+            // but the values and element count must be preserved.
+            let len = data.0.len();
+            assert!(!data.0.is_empty(), "data should be non-empty");
+            assert_eq!(len, 3, "expected 3 elements after round-trip");
+            // Check that values are recognizable in the debug output.
+            let debug_str = format!("{data:?}");
+            assert!(
+                debug_str.contains("100"),
+                "missing value 100 in {debug_str}"
+            );
+            assert!(
+                debug_str.contains("200"),
+                "missing value 200 in {debug_str}"
+            );
+            assert!(
+                debug_str.contains("300"),
+                "missing value 300 in {debug_str}"
+            );
+        }
+        other => panic!("expected Input, got {other:?}"),
     }
 }

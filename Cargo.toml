@@ -8,6 +8,15 @@ repository = "https://github.com/dora-rs/dora-test-utils"
 authors = ["SunSunSun689"]
 
 [dependencies]
+# CLI argument parsing for test binaries.
+clap = { version = "4", features = ["derive"] }
+
+# Error handling for test binaries.
+eyre = "0.6"
+
+# Serialization for SinkResult output.
+serde = { version = "1", features = ["derive"] }
+
 # DORA node API — the primary integration surface.
 # Pinned to commit 45436aad (2026-06-07 snapshot).
 # TEMPORARY: use local dora source for TestingInput::Channel development.
@@ -17,6 +26,7 @@ dora-node-api = { path = "dora/apis/rust/node" }
 # Arrow: DORA uses Arrow arrays for inter-node data.
 # Using 58 to match latest DORA main (which has upgraded from 53).
 arrow = "58"
+arrow-json = "58"
 
 # Tokio: async runtime used by DORA and our harness.
 tokio = { version = "1", features = ["sync", "macros", "rt"] }
@@ -35,3 +45,10 @@ serde_json = "1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
+tempfile = "3"
+serial_test = "3"
+
+[[bin]]
+name = "echo-node"
+path = "tests/fixtures/echo-node.rs"
+test = false
