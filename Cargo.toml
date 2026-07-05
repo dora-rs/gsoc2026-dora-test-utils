@@ -1,0 +1,22 @@
+[package]
+name = "dora-test-utils"
+version = "0.1.0"
+edition = "2021"
+description = "Testing utility library for the DORA framework — unit testing and integration testing support"
+license = "Apache-2.0"
+repository = "https://github.com/dora-rs/dora-test-utils"
+authors = ["SunSunSun689"]
+
+[dependencies]
+# DORA node API — the primary integration surface.
+# Pinned to a git rev once the API surface we depend on stabilizes.
+# dora-node-api = { git = "https://github.com/dora-rs/dora", rev = "..." }
+
+# Arrow: DORA uses Arrow arrays for inter-node data.
+arrow = "53"
+
+# Tokio: async runtime used by DORA and our harness.
+tokio = { version = "1", features = ["sync", "macros", "rt"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
