@@ -156,6 +156,51 @@ impl NodeHarness {
             .expect("NodeHarness: input channel disconnected — node may have panicked");
     }
 
+    /// Convenience: inject input data by ID.
+    ///
+    /// Wraps `data` in a [`TimedIncomingEvent`] and delegates to
+    /// [`send_input`](Self::send_input).  The data type must implement
+    /// [`IntoInputData`] — currently [`serde_json::Value`] and
+    /// [`arrow::array::ArrayData`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if [`close_input`](Self::close_input) was already called,
+    /// if the channel is disconnected, or if `input_id` is not a valid
+    /// [`DataId`](dora_node_api::DataId).
+    ///
+    /// After calling this method, the input channel is still open. To safely
+    /// call [`send_output`](Self::send_output) afterward, you must first
+    /// close the input channel via [`close_input`](Self::close_input) or
+    /// [`run_to_completion`](Self::run_to_completion).
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // JSON data — the most common case
+    /// harness.send_data("image", serde_json::json!({"width": 640}));
+    ///
+    /// // Arrow data
+    /// let array = Int32Array::from(vec![1, 2, 3]).into_data();
+    /// harness.send_data("numbers", array);
+    /// ```
+    pub fn send_data(&mut self, input_id: &str, data: impl crate::IntoInputData) {
+        use dora_node_api::integration_testing::integration_testing_format::{
+            IncomingEvent, TimedIncomingEvent,
+        };
+
+        self.send_input(TimedIncomingEvent {
+            time_offset_secs: 0.0,
+            event: IncomingEvent::Input {
+                id: input_id.parse().unwrap_or_else(|e| {
+                    panic!("NodeHarness::send_data: invalid input_id '{input_id}': {e}")
+                }),
+                metadata: None,
+                data: Some(Box::new(data.into_input_data())),
+            },
+        });
+    }
+
     /// Convenience: inject a [`Stop`](dora_node_api::integration_testing::integration_testing_format::IncomingEvent::Stop)
     /// event (delivered immediately).
     pub fn send_stop(&mut self) {
@@ -304,5 +349,54 @@ impl NodeHarness {
                     .push(output);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_send_data_json() {
+        let mut harness = NodeHarness::new().expect("harness should be created");
+
+        harness.send_data("test_id", serde_json::json!([1, 2, 3]));
+
+        // After send_data, the input should be queued. Drive with tick.
+        let event = harness.tick().expect("should receive Input event");
+        match event {
+            dora_node_api::Event::Input { id, data, .. } => {
+                assert_eq!(id.to_string(), "test_id");
+                assert!(!data.0.is_empty(), "data should be non-empty");
+            }
+            other => panic!("expected Input event, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_send_data_arrow() {
+        use arrow::array::{Array, Int32Array};
+
+        let mut harness = NodeHarness::new().expect("harness should be created");
+
+        let array = Int32Array::from(vec![42, 99]).into_data();
+        harness.send_data("arrow_in", array);
+
+        let event = harness.tick().expect("should receive Input event");
+        match event {
+            dora_node_api::Event::Input { id, data, .. } => {
+                assert_eq!(id.to_string(), "arrow_in");
+                assert!(!data.0.is_empty(), "data should be non-empty");
+            }
+            other => panic!("expected Input event, got {other:?}"),
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "NodeHarness: input channel closed")]
+    fn test_send_data_panics_after_close_input() {
+        let mut harness = NodeHarness::new().expect("harness should be created");
+        harness.close_input();
+        harness.send_data("x", serde_json::json!(42));
     }
 }

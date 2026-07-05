@@ -14,35 +14,68 @@
 //!
 //! ```ignore
 //! use dora_test_utils::NodeHarness;
-//! use dora_node_api::integration_testing::integration_testing_format::{
-//!     IncomingEvent, TimedIncomingEvent,
-//! };
 //!
 //! #[test]
 //! fn test_classifier_node() {
 //!     let mut harness = NodeHarness::new()
 //!         .expect("failed to create harness");
 //!
-//!     // Inject an input event at runtime
-//!     harness.send_input(TimedIncomingEvent {
-//!         time_offset_secs: 0.0,
-//!         event: IncomingEvent::Stop,
-//!     });
+//!     // Inject data via the convenience method.
+//!     harness.send_data("image", serde_json::json!([1, 2, 3]));
 //!
-//!     // Drive one iteration (blocking — init_testing uses blocking_recv)
-//!     harness.tick();
+//!     // Drive to completion (auto-injects Stop, auto-closes input).
+//!     let events = harness.run_to_completion();
+//!     assert!(events.iter().any(|e| matches!(e, dora_node_api::Event::Input { .. })));
 //!
-//!     // Assert outputs
+//!     // Send and assert outputs.
+//!     harness.send_output("label", arrow::array::Int32Array::from(vec![42]))
+//!         .expect("send_output should succeed");
 //!     let outputs = harness.recv_output("label");
 //!     assert!(outputs.is_some());
 //! }
+//! ```
+//!
+//! For full control, use [`send_input`](NodeHarness::send_input) with
+//! [`TimedIncomingEvent`] directly:
+//!
+//! ```ignore
+//! use dora_node_api::integration_testing::integration_testing_format::{
+//!     IncomingEvent, TimedIncomingEvent,
+//! };
+//!
+//! harness.send_input(TimedIncomingEvent {
+//!     time_offset_secs: 0.0,
+//!     event: IncomingEvent::Input { /* ... */ },
+//! });
 //! ```
 //!
 //! ## 2. Integration testing — TestSource / TestSink
 //!
 //! Reusable binary nodes that emit test data from files and capture + assert
 //! outputs.  Drop them into a real YAML dataflow alongside the node under
-//! test. *(Planned — Week 5–8)*
+//! test. *(Library + CLI: Week 5; integration tests: Week 6–8)*
+//!
+//! ```ignore
+//! use dora_test_utils::source::{run_test_source, SourceConfig};
+//! use dora_test_utils::sink::{run_test_sink, SinkConfig};
+//!
+//! // Source: emit test data from a JSON file.
+//! let config = SourceConfig {
+//!     output_id: "data".into(),
+//!     data: serde_json::json!({"data": [42, 99], "data_type": "Int32"}),
+//! };
+//! run_test_source(config)?;
+//!
+//! // Sink: capture and compare with expected output.
+//! let config = SinkConfig {
+//!     expected_file: "expected.json".into(),
+//!     output_file: "result.json".into(),
+//!     fail_on_mismatch: true,
+//!     strict: false,
+//! };
+//! let result = run_test_sink(config)?;
+//! assert!(result.r#match);
+//! ```
 //!
 //! ## 3. Regression testing — Record / Replay
 //!
@@ -55,16 +88,18 @@
 //! |-----------|--------|
 //! | [`NodeHarness`] (struct + `new()`) | Implemented — wraps [`DoraNode::init_testing()`][init] with live [`TestingInput::Channel`] + [`TestingOutput::ToChannel`] |
 //! | [`NodeHarness::send_input()`] | Implemented — pushes [`TimedIncomingEvent`] through live flume channel |
+//! | [`NodeHarness::send_data()`] | Implemented — convenience: inject data by ID (accepts [`serde_json::Value`] and [`arrow::array::ArrayData`]) |
 //! | [`NodeHarness::send_stop()`] | Implemented — convenience wrapper around `send_input` for Stop events |
 //! | [`NodeHarness::send_output()`] | Implemented — delegates to [`DoraNode::send_output`]; safe after [`close_input`](NodeHarness::close_input) or [`run_to_completion`](NodeHarness::run_to_completion) |
 //! | [`NodeHarness::tick()`] | Implemented — synchronous, polls real [`EventStream`], collects outputs |
 //! | [`NodeHarness::recv_output()`] | Implemented — drains output buffers; returns `Option<Vec<Map<String, Value>>>` |
 //! | [`NodeHarness::close_input()`] | Implemented — drops input sender to unblock daemon thread for safe `send_output` |
 //! | [`NodeHarness::run_to_completion()`] | Implemented — loops tick() until Stop/None, auto-calls close_input(), returns Vec<Event> |
-//! | E2E tests | Implemented — `tests/e2e.rs`: 4 tests covering input pipeline, output path, run_to_completion, full pipeline |
+//! | E2E tests | Implemented — `tests/e2e.rs`: 5 tests covering input pipeline, output path, run_to_completion, full pipeline, Arrow data |
 //! | [`MockEventStream`] | Fully implemented + 3 tests |
 //! | [`MockOutputSender`] / [`OutputCollector`] | Fully implemented + 3 tests |
-//! | TestSource / TestSink binaries | Week 5 |
+//! | [`TestSource`][crate::source] library + CLI binary | Implemented — JSON→Arrow with `data_type` hint (Int8–UInt64, Float32/64, LargeUtf8); CLI: `--data-file`/`--inline-data` |
+//! | [`TestSink`][crate::sink] library + CLI binary | Implemented — strict (JSON round-trip) + semantic (Arrow equality) comparison; CLI: `--expected-file`/`--strict`/`--no-fail-on-mismatch` |
 //! | Integration tests | Week 6–8 |
 //! | Record / Replay | Week 13–17 (extended) |
 //!
@@ -90,8 +125,12 @@
 
 pub mod harness;
 pub mod mock;
+pub mod sink;
+pub mod source;
+pub mod traits;
 
 // Re-export the key types for convenience.
 pub use harness::NodeHarness;
 pub use mock::event_stream::MockEventStream;
 pub use mock::output::{MockOutputSender, OutputCollector};
+pub use traits::IntoInputData;
