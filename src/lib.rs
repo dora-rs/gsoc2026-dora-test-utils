@@ -56,10 +56,12 @@
 //! | [`NodeHarness`] (struct + `new()`) | Implemented — wraps [`DoraNode::init_testing()`][init] with live [`TestingInput::Channel`] + [`TestingOutput::ToChannel`] |
 //! | [`NodeHarness::send_input()`] | Implemented — pushes [`TimedIncomingEvent`] through live flume channel |
 //! | [`NodeHarness::send_stop()`] | Implemented — convenience wrapper around `send_input` for Stop events |
-//! | [`NodeHarness::send_output()`] | Implemented — delegates to [`DoraNode::send_output`]; known limitation: deadlocks if daemon thread is blocked in `next_event()` (see harness docs) |
+//! | [`NodeHarness::send_output()`] | Implemented — delegates to [`DoraNode::send_output`]; safe after [`close_input`](NodeHarness::close_input) or [`run_to_completion`](NodeHarness::run_to_completion) |
 //! | [`NodeHarness::tick()`] | Implemented — synchronous, polls real [`EventStream`], collects outputs |
 //! | [`NodeHarness::recv_output()`] | Implemented — drains output buffers; returns `Option<Vec<Map<String, Value>>>` |
-//! | E2E test | Implemented — `tests/e2e.rs`: send_input → tick → verify events received |
+//! | [`NodeHarness::close_input()`] | Implemented — drops input sender to unblock daemon thread for safe `send_output` |
+//! | [`NodeHarness::run_to_completion()`] | Implemented — loops tick() until Stop/None, auto-calls close_input(), returns Vec<Event> |
+//! | E2E tests | Implemented — `tests/e2e.rs`: 4 tests covering input pipeline, output path, run_to_completion, full pipeline |
 //! | [`MockEventStream`] | Fully implemented + 3 tests |
 //! | [`MockOutputSender`] / [`OutputCollector`] | Fully implemented + 3 tests |
 //! | TestSource / TestSink binaries | Week 5 |
