@@ -109,6 +109,8 @@ harness.send_data("numbers", serde_json::json!([1, 2, 3]));
 
 | Document / 文档 | Purpose / 用途 |
 |----------|---------|
+| `docs/superpowers/specs/2026-06-21-send-data-convenience-design.md` | Design spec / 设计规范 |
+| `docs/superpowers/plans/2026-06-21-send-data-convenience.md` | Implementation plan / 实现计划 |
 | `docs/WEEK3-4_SUMMARY.md` | Week 3–4 progress / 第 3–4 周进度 |
 | `docs/WEEK3-4-MENTOR-REPORT.md` | Mentor report / 导师报告 |
 | `docs/WEEK3-DISCUSSION.md` | Discussion notes / 讨论记录 |
@@ -140,6 +142,7 @@ docs/
 ├── WEEKLY_PLAN.md
 ├── WEEK4-SUMMARY-WEEK5-PLAN.md
 ├── proposal.pdf
+└── superpowers/
     ├── specs/           # 3 design specs / 设计规范
     └── plans/           # 3 implementation plans / 实现计划
 ```

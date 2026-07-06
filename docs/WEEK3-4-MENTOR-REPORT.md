@@ -173,3 +173,4 @@ pub fn run_to_completion(&mut self) -> Vec<Event> {
 
 等 mentor 对 Q1/Q2 回复后，按确认方向推进 Week 5。届时需处理 vendored dora 依赖。
 
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
