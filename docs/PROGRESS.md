@@ -223,6 +223,7 @@ gsoc2026-dora-test-utils/
 │   ├── PROGRESS.md                # This file
 │   ├── MIDTERM-REPORT.md          # GSoC midterm evaluation report
 │   ├── proposal.pdf               # Accepted GSoC proposal
+│   └── superpowers/               # Design specs + implementation plans
 │       ├── specs/
 │       └── plans/
 ├── .github/workflows/

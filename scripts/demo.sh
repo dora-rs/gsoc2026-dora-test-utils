@@ -114,79 +114,8 @@ else
     warn "result.json not found (checked tests/fixtures/ and ./)"
 fi
 
-# ─── 6. Failure demo ─────────────────────────────────────
-banner "6. Failure demo — catching a bug"
-
-FAIL_DIR=$(mktemp -d)
-trap "rm -rf $FAIL_DIR" EXIT
-
-# Copy the correct source data (echo-node will output [42, 99, -1])
-cp tests/fixtures/source-data.json "$FAIL_DIR/source-data.json"
-
-# Deliberately write WRONG expected data — 99 → 999
-cat > "$FAIL_DIR/expected-output.json" << 'FAILEOF'
-{
-  "data": [42, 999, -1],
-  "data_type": "Int64"
-}
-FAILEOF
-
-echo "Source sends:  [42, 99, -1]"
-echo "Expected:      [42, 999, -1]  ← deliberate mistake at index 1"
-echo ""
-
-# Generate a temporary YAML dataflow (all paths are project-relative).
-TARGET_DIR="$(pwd)/target"
-cat > "$FAIL_DIR/dataflow.yml" << YAMLEOF
-nodes:
-  - id: test-source
-    path: $TARGET_DIR/debug/test_source
-    args: "--output-id data --data-file $FAIL_DIR/source-data.json"
-    outputs:
-      - data
-
-  - id: echo-node
-    path: $TARGET_DIR/debug/echo-node
-    inputs:
-      data: test-source/data
-    outputs:
-      - data
-
-  - id: test-sink
-    path: $TARGET_DIR/debug/test-sink
-    inputs:
-      data: echo-node/data
-    args: "--expected-file $FAIL_DIR/expected-output.json --output-file $FAIL_DIR/result.json"
-YAMLEOF
-
-echo "Running pipeline..."
-set +e
-DORA_FAIL_LOG=$(mktemp)
-$DORA run "$FAIL_DIR/dataflow.yml" --stop-after 10s > "$DORA_FAIL_LOG" 2>&1
-DORA_FAIL_EXIT=$?
-set -e
-
-grep -E "(node is ready|finished|dataflow finished|exited with error)" "$DORA_FAIL_LOG" || true
-rm -f "$DORA_FAIL_LOG"
-
-echo ""
-
-if [ -f "$FAIL_DIR/result.json" ]; then
-    cat "$FAIL_DIR/result.json"
-    echo ""
-    if grep -q '"match": false' "$FAIL_DIR/result.json"; then
-        echo -e "${GREEN}${BOLD}✅ Bug caught!${NC} — test-sink detected the mismatch at index 1 (expected 999, got 99)"
-    else
-        echo -e "${RED}${BOLD}❌ Unexpected: result.json shows match=true${NC}"
-    fi
-else
-    warn "result.json not found in $FAIL_DIR"
-fi
-
-rm -rf "$FAIL_DIR"
-
-# ─── 7. Integration tests ────────────────────────────────
-banner "7. Integration test suite"
+# ─── 6. Integration tests ────────────────────────────────
+banner "6. Integration test suite"
 
 echo "Running 4 automated integration tests..."
 echo ""
@@ -197,8 +126,8 @@ if [ $INTEGRATION_EXIT -ne 0 ]; then
     warn "some integration tests may have failed (grep found no matches)"
 fi
 
-# ─── 8. Library unit tests ───────────────────────────────
-banner "8. Library unit tests"
+# ─── 7. Library unit tests ───────────────────────────────
+banner "7. Library unit tests"
 
 UNIT_LOG=$(mktemp)
 set +e
@@ -221,10 +150,9 @@ rm -f "$UNIT_LOG"
 banner "Demo Complete"
 
 echo -e "${GREEN}${BOLD}Summary:${NC}"
-echo "  • Happy path: test-source → echo-node → test-sink ✅"
-echo "  • Failure demo: deliberate mismatch caught ✅"
+echo "  • Echo pipeline: test-source → echo-node → test-sink"
 echo "  • Integration tests: 4/4 passing"
 echo "  • Library unit tests: $(echo "$UNIT_RESULT" | grep -o '[0-9]\+ passed' || echo 'see above')"
 echo ""
 echo -e "${CYAN}Repo:${NC} https://github.com/SunSunSun689/gsoc2026-dora-test-utils"
-echo -e "${CYAN}Branch:${NC} week6"
+echo -e "${CYAN}Branch:${NC} week5"
