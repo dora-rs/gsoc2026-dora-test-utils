@@ -150,7 +150,6 @@ docs/
 ├── PROGRESS.md
 ├── WEEK1-2_SUMMARY.md
 ├── WEEK3-DISCUSSION.md
-└── superpowers/
     ├── specs/          # Design specs
     └── plans/          # Implementation plans
 ```
@@ -191,4 +190,3 @@ docs/
 - **TestSourceNode binary** (`src/bin/test_source.rs`): emit test data from file/inline JSON
 - **TestSinkNode binary** (`src/bin/test_sink.rs`): receive + compare with expected, exit code 0/1
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)

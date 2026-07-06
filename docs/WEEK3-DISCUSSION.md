@@ -146,4 +146,3 @@ enum EventSource {
 
 等 mentor 对 Q1–Q2 的回复后，按确认的方向推进 Week 5。届时需要决定如何处理 vendored dora 依赖。
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
