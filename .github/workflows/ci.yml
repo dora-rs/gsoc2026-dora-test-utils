@@ -16,6 +16,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - run: git clone https://github.com/dora-rs/dora.git dora && git -C dora checkout 45436aad124fe46463d0b0411e3922dae8ee9ebd
+        working-directory: ${{ github.workspace }}
+      - run: git -C dora apply ../dora-patches/testing-input-channel.patch
       - run: cargo check
 
   test:
@@ -24,6 +27,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - run: git clone https://github.com/dora-rs/dora.git dora && git -C dora checkout 45436aad124fe46463d0b0411e3922dae8ee9ebd
+        working-directory: ${{ github.workspace }}
+      - run: git -C dora apply ../dora-patches/testing-input-channel.patch
       - run: cargo test
 
   clippy:
@@ -34,6 +40,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      - run: git clone https://github.com/dora-rs/dora.git dora && git -C dora checkout 45436aad124fe46463d0b0411e3922dae8ee9ebd
+        working-directory: ${{ github.workspace }}
+      - run: git -C dora apply ../dora-patches/testing-input-channel.patch
       - run: cargo clippy -- -D warnings
 
   fmt:
