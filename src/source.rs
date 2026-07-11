@@ -280,7 +280,9 @@ fn json_array_to_arrow_struct(
                     "array/object elements in a JSON array require an explicit data type hint"
                 )
             }
-            None => eyre::bail!("empty JSON array cannot be converted to Arrow without a type hint"),
+            None => {
+                eyre::bail!("empty JSON array cannot be converted to Arrow without a type hint")
+            }
         },
     };
 
