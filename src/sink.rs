@@ -466,9 +466,10 @@ mod tests {
         // ("42" ≠ "hello"), so semantic comparison must report a mismatch.
         let expected_str = serde_json::json!("hello");
         let expected: Vec<&serde_json::Value> = vec![&expected_str];
-        let received: Vec<arrow::array::ArrayRef> = vec![
-            std::sync::Arc::new(arrow::array::Int64Array::from(vec![42])),
-        ];
+        let received: Vec<arrow::array::ArrayRef> =
+            vec![std::sync::Arc::new(arrow::array::Int64Array::from(vec![
+                42,
+            ]))];
         let result = compare_semantic(&expected, &received, None);
         assert!(
             !result.r#match,
@@ -488,9 +489,10 @@ mod tests {
         // value and an integer received value are never equal in JSON.
         let expected_str = serde_json::json!("hello");
         let expected: Vec<&serde_json::Value> = vec![&expected_str];
-        let received: Vec<arrow::array::ArrayRef> = vec![
-            std::sync::Arc::new(arrow::array::Int64Array::from(vec![42])),
-        ];
+        let received: Vec<arrow::array::ArrayRef> =
+            vec![std::sync::Arc::new(arrow::array::Int64Array::from(vec![
+                42,
+            ]))];
         let result = compare_strict(&expected, &received).unwrap();
         assert!(
             !result.r#match,
@@ -531,7 +533,8 @@ mod tests {
     #[test]
     fn test_compare_semantic_large_batch_1000_one_mismatch() {
         // 1000 elements with the last one wrong → exactly 1 difference reported.
-        let mut values: Vec<serde_json::Value> = (0_i64..1000).map(|i| serde_json::json!(i)).collect();
+        let mut values: Vec<serde_json::Value> =
+            (0_i64..1000).map(|i| serde_json::json!(i)).collect();
         // Corrupt the last expected value.
         values[999] = serde_json::json!(9999_i64);
 
@@ -545,7 +548,10 @@ mod tests {
 
         let result = compare_semantic(&expected, &received, None);
 
-        assert!(!result.r#match, "mismatch at index 999 should fail the comparison");
+        assert!(
+            !result.r#match,
+            "mismatch at index 999 should fail the comparison"
+        );
         assert_eq!(result.expected_count, 1000);
         assert_eq!(result.received_count, 1000);
         assert_eq!(
