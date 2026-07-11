@@ -235,9 +235,43 @@ gsoc2026-dora-test-utils/
 
 ---
 
-## 📋 Next: Week 7–8 (Coding Phase 2)
+## Week 7 (COMPLETED 2026-07-11): Edge Cases + CI
 
-### Week 7–8: Edge Cases + CI
+### Completed
+
+- [x] **Edge-case unit tests** (6 new, 45 total)
+  - [x] Source: single element JSON array → 1-row Arrow array
+  - [x] Source: UInt32 overflow (>4.3B) → clear "out of range" error
+  - [x] Sink: incompatible types (String vs Int64) → Difference reported
+  - [x] Sink: strict mode mismatch (String vs Int64) → JSON comparison catches it
+  - [x] Sink: 1000-element batch match < 500ms
+  - [x] Sink: 1000-element batch with 1 mismatch → exact Difference at correct index
+- [x] **Bug fixes exposed by new tests**
+  - [x] `json_array_to_arrow_struct`: type inference for None hint path + NDJSON serialization fix
+  - [x] `json_obj_to_arrow_struct`: NDJSON serialization fix (arrow_json tape decoder compat)
+- [x] **CI integration test job** (5th job in `.github/workflows/ci.yml`)
+  - [x] Build dora CLI from vendored workspace
+  - [x] Cache dora/target via actions/cache@v4
+  - [x] Build test binaries (test_source, test-sink, echo-node)
+  - [x] Run `cargo test --test integration -- --test-threads=1`
+
+### Commits
+
+| Commit | Description |
+|--------|-------------|
+| `6a1f326` | test: add edge-case unit tests for source — single element, UInt32 overflow |
+| `f2db573` | test: add edge-case and scale tests for sink |
+| `a8c7167` | ci: add integration-test job — build dora, run integration tests |
+| `0e8c163` | chore: cargo fmt |
+
+---
+
+## 📋 Next: Week 8 (Coding Phase 2)
+
+### Week 8: Multi-Input/Multi-Output + Examples
+- [ ] Multi-input/multi-output dataflow integration test
+- [ ] Example dataflows (classifier, multi-node)
+- [ ] Edge-case tests deferred from Week 7 (if any)
 - [ ] **Edge case tests**
   - [ ] Empty data arrays → verify clear error
   - [ ] Type mismatches → verify correct Difference reporting
@@ -287,18 +321,19 @@ gsoc2026-dora-test-utils/
 | Week 5 Binaries | TestSource + TestSink | 25 tests | ✅ |
 | Week 6 Integration tests | Echo pipeline + demo | 4/4 integration, 39 unit | ✅ |
 | **Mid-term eval (Week 6)** | MVP complete | Ahead of schedule | 🚀 |
-| Week 7–8 Edge cases + CI | TBD | TBD | ⏳ |
+| Week 7 Edge cases + CI | 6 tests + CI job | 6 tests + CI job | ✅ |
 | **Final submission** | Extended complete | TBD | ⏳ |
 
-### Code Metrics (Week 6 snapshot)
+### Code Metrics (Week 7 snapshot)
 
-| Metric | Value |
+| Metric | Week 6 | Week 7 |
 |--------|-------|
 | Total Rust source files | 10 |
 | Total lines (src/ + tests/) | ~2,500 |
-| Library unit tests | 39 |
-| E2E tests | 5 |
-| Integration tests | 4 |
+| Library unit tests | 39 | 45 |
+| E2E tests | 5 | 5 |
+| Integration tests | 4 | 4 |
+| CI jobs | 4 | 5 |
 | Mock tests | 3 |
 | CI gates (fmt, clippy, test) | All passing |
 | Code review rounds | 3 (max-effort, 27 findings fixed) |
