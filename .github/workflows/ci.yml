@@ -54,3 +54,31 @@ jobs:
         with:
           components: rustfmt
       - run: cargo fmt --check
+
+  integration-test:
+    name: cargo test --integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - run: git clone https://github.com/dora-rs/dora.git dora && git -C dora checkout 45436aad124fe46463d0b0411e3922dae8ee9ebd
+        working-directory: ${{ github.workspace }}
+
+      - run: git -C dora apply ../dora-patches/testing-input-channel.patch
+
+      # Cache dora build artifacts — keyed on dora source hash so the
+      # cache hits every run after the first (commit is locked).
+      - uses: actions/cache@v4
+        with:
+          path: dora/target
+          key: dora-target-${{ runner.os }}-${{ hashFiles('dora/**/*.rs', 'dora/**/Cargo.toml') }}
+
+      # Build the dora CLI and binaries needed for `dora run`.
+      - run: cargo build --bin dora --manifest-path dora/Cargo.toml
+
+      # Build our test binaries first (integration test expects them pre-built).
+      - run: cargo build --bin test_source --bin test-sink --bin echo-node
+
+      # Run integration tests serially (dora daemon binds port 6013).
+      - run: cargo test --test integration -- --test-threads=1
