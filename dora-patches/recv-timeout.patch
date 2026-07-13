@@ -1,0 +1,25 @@
+diff --git a/apis/rust/node/src/daemon_connection/node_integration_testing.rs b/apis/rust/node/src/daemon_connection/node_integration_testing.rs
+index 4866f579..fa73aec4 100644
+--- a/apis/rust/node/src/daemon_connection/node_integration_testing.rs
++++ b/apis/rust/node/src/daemon_connection/node_integration_testing.rs
+@@ -196,12 +196,17 @@ impl IntegrationTestingEvents {
+                 Some(e) => e,
+                 None => return Ok(None),
+             },
+-            // Blocking read: the event-stream thread that calls this runs
+-            // on its own std::thread, so blocking is fine.  The receiver
+-            // is disconnected when the harness drops its input_tx sender,
+-            // which unblocks the thread and causes a clean shutdown.
+-            EventSource::Channel(rx) => match rx.recv() {
++            // Use recv_timeout so the daemon never blocks indefinitely.
++            // After the test stops sending events, the timeout fires,
++            // the daemon returns to its request loop and can process
++            // cleanup requests without the flume spinlock deadlock.
++            EventSource::Channel(rx) => match rx.recv_timeout(
++                std::time::Duration::from_millis(500)
++            ) {
+                 Ok(e) => e,
++                Err(flume::RecvError::Timeout) => return Ok(None),
+                 Err(flume::RecvError::Disconnected) => return Ok(None),
+             },
+         };
