@@ -31,9 +31,6 @@ arrow-json = "58"
 # Tokio: async runtime used by DORA and our harness.
 tokio = { version = "1", features = ["sync", "macros", "rt"] }
 
-# Futures: Stream trait for EventStream compatibility.
-futures = "0.3"
-
 # Flume: multi-producer single-consumer channel used by DORA's
 # TestingOutput::ToChannel for capturing real node outputs.
 # Pinned to match DORA's own flume version (0.10.14).
