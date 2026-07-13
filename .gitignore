@@ -20,3 +20,4 @@ target/
 result.json
 tests/fixtures/out/
 *.dora-session.yaml
+docs/

@@ -185,10 +185,9 @@ fn number_to_arrow_array(
         }
         // Float16 not handled here — requires the `half` crate.
         Some(DataType::Float32) => {
-            let v: f32 = n
-                .as_f64()
-                .map(|f| f as f32)
-                .ok_or_else(|| eyre::eyre!("value {n} out of range for Float32"))?;
+            let v: f32 = n.as_f64().map(|f| f as f32).ok_or_else(|| {
+                eyre::eyre!("value {n} out of range or not representable as Float32")
+            })?;
             Ok(Arc::new(arrow::array::Float32Array::from(vec![v])))
         }
         Some(DataType::Float64) => {
@@ -233,23 +232,26 @@ fn json_obj_to_arrow_struct(
     use arrow::datatypes::{Field, Schema};
     use std::sync::Arc;
 
-    // Build a schema from the data_type hint when available,
-    // falling back to auto-inference for unknown schemas.
-    let schema = data_type_hint
-        .map(|dt| Arc::new(Schema::new(vec![Field::new("data", dt.clone(), true)])))
-        .unwrap_or_else(|| Arc::new(Schema::empty()));
+    // JSON objects require an explicit data_type hint so that the schema
+    // field name ("data") matches the wrapped JSON structure.  Without a
+    // hint, auto-inferred schemas produce N columns but only column(0) is
+    // returned — silently dropping all other object keys.
+    let dt = data_type_hint.ok_or_else(|| {
+        eyre::eyre!(
+            "JSON objects require an explicit data_type hint (e.g. \"Struct\"). \
+             Without one, auto-inferred multi-column schemas would lose all \
+             but the first column."
+        )
+    })?;
 
-    // When a data_type hint is present, wrap the object in {"data": obj}
-    // so that the schema's "data" field name matches the JSON structure.
-    // Serialize as NDJSON (newline-delimited) rather than a JSON array,
-    // because the arrow_json tape-based decoder expects a single JSON
-    // object or NDJSON, not a JSON array.
-    let json_bytes = if data_type_hint.is_some() {
-        let wrapped = serde_json::json!({"data": obj});
-        serde_json::to_vec(&wrapped)?
-    } else {
-        serde_json::to_vec(obj)?
-    };
+    let schema = Arc::new(Schema::new(vec![Field::new("data", dt.clone(), true)]));
+
+    // Wrap the object in {"data": obj} so that the schema's "data" field
+    // name matches the JSON structure.  Serialize as a single JSON object
+    // (the arrow_json tape-based decoder expects one JSON object or NDJSON,
+    // not a JSON array).
+    let wrapped = serde_json::json!({"data": obj});
+    let json_bytes = serde_json::to_vec(&wrapped)?;
 
     json_bytes_to_arrow_column(&json_bytes, schema)
 }
@@ -285,6 +287,36 @@ fn json_array_to_arrow_struct(
             }
         },
     };
+
+    // Validate that all elements are compatible with the inferred type.
+    // Heterogeneous arrays (e.g. [42, "hello"]) would otherwise produce a
+    // cryptic arrow_json parse error that doesn't point to the real cause.
+    if data_type_hint.is_none() {
+        for (i, v) in arr.iter().enumerate().skip(1) {
+            let ok = match (&element_type, v) {
+                (DataType::Float64, serde_json::Value::Number(_)) => true,
+                (DataType::Int64, serde_json::Value::Number(n)) => !n.is_f64(),
+                (DataType::Utf8, serde_json::Value::String(_)) => true,
+                (DataType::Boolean, serde_json::Value::Bool(_)) => true,
+                (DataType::Null, serde_json::Value::Null) => true,
+                _ => false,
+            };
+            if !ok {
+                eyre::bail!(
+                    "type mismatch in JSON array at index {i}: inferred {element_type:?} \
+                     from first element, but element {i} is {}",
+                    match v {
+                        serde_json::Value::Number(_) => "a number of a different kind",
+                        serde_json::Value::String(_) => "a string",
+                        serde_json::Value::Bool(_) => "a boolean",
+                        serde_json::Value::Null => "null",
+                        serde_json::Value::Array(_) => "an array",
+                        serde_json::Value::Object(_) => "an object",
+                    }
+                );
+            }
+        }
+    }
 
     let schema = Arc::new(Schema::new(vec![Field::new("data", element_type, true)]));
 

@@ -244,15 +244,20 @@ impl NodeHarness {
         output_id: &str,
         data: impl arrow::array::Array,
     ) -> Result<(), NodeError> {
+        // Parse the output_id before closing the input channel, so that
+        // a parse error doesn't leave the input channel permanently closed
+        // (which would break subsequent send_input / send_data calls).
+        let data_id = output_id
+            .parse()
+            .map_err(|e| NodeError::Output(format!("invalid output_id '{output_id}': {e}")))?;
+
         // Close the input channel to unblock the daemon thread.  The daemon
         // is single-threaded and blocks on `input_rx.recv()` while processing
         // the eagerly-issued NextEvent request.  Dropping the sender causes
         // `recv()` to return Disconnected, the daemon returns to its request
         // loop, and our SendMessage becomes processable.
         self.close_input();
-        let data_id = output_id
-            .parse()
-            .map_err(|e| NodeError::Output(format!("invalid output_id '{output_id}': {e}")))?;
+
         self.node.send_output(data_id, Default::default(), data)
     }
 
@@ -345,6 +350,13 @@ impl NodeHarness {
             if let Some(id) = output.get("id").and_then(|v| v.as_str()) {
                 self.output_buffers
                     .entry(id.to_string())
+                    .or_default()
+                    .push(output);
+            } else {
+                // Don't silently drop outputs that lack a string "id" field —
+                // store them under a sentinel key so the test author can debug.
+                self.output_buffers
+                    .entry("<missing-id>".to_string())
                     .or_default()
                     .push(output);
             }

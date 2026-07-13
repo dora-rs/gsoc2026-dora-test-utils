@@ -286,7 +286,10 @@ fn compare_semantic(
                             "conversion error at index {i}: {e:#}. Original value: {v}"
                         ),
                     });
-                    // Use 0-length NullArray placeholder so loop proceeds.
+                    // Use 0-length NullArray placeholder so the indices stay
+                    // aligned.  The comparison closure below skips these
+                    // placeholders to avoid redundant "value mismatch"
+                    // entries alongside the conversion error above.
                     Arc::new(arrow::array::NullArray::new(0))
                 }
             }
@@ -296,24 +299,49 @@ fn compare_semantic(
     let mut result =
         compare_sequences(&expected_arrays, received, |exp, rec, i| match (exp, rec) {
             (Some(e), Some(r)) => {
-                // Semantic equality: if the received array has a
-                // different Arrow type, try casting it to the
-                // expected type first (e.g. Int64 → Int32).
-                // If the cast succeeds and values match, the
-                // arrays are semantically equal.
+                // Skip NullArray(0) placeholders inserted for conversion
+                // errors — those are already reported above.
+                if e.data_type() == &arrow::datatypes::DataType::Null && e.is_empty() {
+                    return None;
+                }
+                // Semantic equality: when types differ, widen before
+                // comparing.  Float types preserve fractional parts,
+                // so prefer them over integers to avoid silent
+                // truncation (e.g. Float64(1.7) ≠ Int32(1)).
                 let matches = if e.data_type() == r.data_type() {
                     e == r
                 } else {
-                    arrow::compute::cast(r, e.data_type())
-                        .map(|casted| e.as_ref() == casted.as_ref())
-                        .unwrap_or(false)
+                    let target = match (e.data_type(), r.data_type()) {
+                        (arrow::datatypes::DataType::Float64, _)
+                        | (_, arrow::datatypes::DataType::Float64) => {
+                            arrow::datatypes::DataType::Float64
+                        }
+                        (arrow::datatypes::DataType::Float32, _)
+                        | (_, arrow::datatypes::DataType::Float32) => {
+                            arrow::datatypes::DataType::Float32
+                        }
+                        _ => e.data_type().clone(),
+                    };
+                    let cast_e = arrow::compute::cast(e, &target);
+                    let cast_r = arrow::compute::cast(r, &target);
+                    match (cast_e, cast_r) {
+                        (Ok(ce), Ok(cr)) => ce.as_ref() == cr.as_ref(),
+                        _ => false,
+                    }
                 };
                 if matches {
                     None
                 } else {
                     Some(Difference {
                         index: Some(i),
-                        message: format!("value mismatch at index {i}: expected {e:?}, got {r:?}"),
+                        message: format!(
+                            "value mismatch at index {i}: \
+                             expected {}[{}], got {}[{}]",
+                            e.data_type(),
+                            e.len(),
+                            r.data_type(),
+                            r.len(),
+                        ),
                     })
                 }
             }
