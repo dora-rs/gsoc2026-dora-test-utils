@@ -19,6 +19,7 @@ jobs:
       - run: git clone https://github.com/dora-rs/dora.git dora && git -C dora checkout 45436aad124fe46463d0b0411e3922dae8ee9ebd
         working-directory: ${{ github.workspace }}
       - run: git -C dora apply ../dora-patches/testing-input-channel.patch
+      - run: git -C dora apply ../dora-patches/event-stream-thread-timeout.patch
       - run: cargo check
 
   test:
@@ -30,6 +31,7 @@ jobs:
       - run: git clone https://github.com/dora-rs/dora.git dora && git -C dora checkout 45436aad124fe46463d0b0411e3922dae8ee9ebd
         working-directory: ${{ github.workspace }}
       - run: git -C dora apply ../dora-patches/testing-input-channel.patch
+      - run: git -C dora apply ../dora-patches/event-stream-thread-timeout.patch
       - run: cargo test --lib --tests -- --test-threads=1
 
   clippy:
@@ -43,6 +45,7 @@ jobs:
       - run: git clone https://github.com/dora-rs/dora.git dora && git -C dora checkout 45436aad124fe46463d0b0411e3922dae8ee9ebd
         working-directory: ${{ github.workspace }}
       - run: git -C dora apply ../dora-patches/testing-input-channel.patch
+      - run: git -C dora apply ../dora-patches/event-stream-thread-timeout.patch
       - run: cargo clippy -- -D warnings
 
   fmt:
@@ -66,6 +69,7 @@ jobs:
         working-directory: ${{ github.workspace }}
 
       - run: git -C dora apply ../dora-patches/testing-input-channel.patch
+      - run: git -C dora apply ../dora-patches/event-stream-thread-timeout.patch
 
       # Cache dora build artifacts — keyed on dora source hash so the
       # cache hits every run after the first (commit is locked).
@@ -74,8 +78,10 @@ jobs:
           path: dora/target
           key: dora-target-${{ runner.os }}-${{ hashFiles('dora/**/*.rs', 'dora/**/Cargo.toml') }}
 
-      # Build the dora CLI and binaries needed for `dora run`.
-      - run: cargo build --bin dora --manifest-path dora/Cargo.toml
+      # Build the dora CLI (binary lives in binaries/cli, not workspace root).
+      # PYO3_NO_PYTHON=1 skips Python version detection — the CLI's default
+      # features don't include Python support, and CI doesn't need it.
+      - run: PYO3_NO_PYTHON=1 cargo build --bin dora --manifest-path dora/binaries/cli/Cargo.toml
 
       # Build our test binaries first (integration test expects them pre-built).
       - run: cargo build --bin test_source --bin test-sink --bin echo-node
