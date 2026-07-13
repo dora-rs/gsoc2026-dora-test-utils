@@ -256,7 +256,14 @@ impl NodeHarness {
         // the eagerly-issued NextEvent request.  Dropping the sender causes
         // `recv()` to return Disconnected, the daemon returns to its request
         // loop, and our SendMessage becomes processable.
+        //
+        // The brief sleep forces a context switch so the daemon thread has
+        // time to unwind the NextEvent path before we enqueue SendMessage.
+        // Without this, the daemon may still be inside recv() when our
+        // blind oneshot reply wait starts, causing a permanent hang on
+        // resource-constrained CI runners.
         self.close_input();
+        std::thread::sleep(std::time::Duration::from_millis(50));
 
         self.node.send_output(data_id, Default::default(), data)
     }
@@ -379,6 +386,15 @@ impl Drop for NodeHarness {
         // CloseOutputs, OutputsDone) to the daemon via a blocking
         // oneshot, but the daemon is still stuck in recv().
         self.close_input();
+
+        // On resource-constrained CI runners (2 vCPU), the daemon
+        // thread can be starved by the OS scheduler.  A brief sleep
+        // deschedules the current thread, forcing a context switch
+        // that gives the daemon time to wake from input_rx.recv() and
+        // process the disconnect before the subsequent node drop sends
+        // blocking cleanup requests.  Without this, the test hangs
+        // permanently — the daemon is stuck in recv() and never
+        // responds to EventStreamDropped / CloseOutputs / OutputsDone.
         std::thread::sleep(std::time::Duration::from_millis(200));
     }
 }
