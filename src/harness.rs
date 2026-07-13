@@ -154,6 +154,11 @@ impl NodeHarness {
             .expect("NodeHarness: input channel closed — close_input() was already called")
             .send(event)
             .expect("NodeHarness: input channel disconnected — node may have panicked");
+        // Yield so the daemon thread gets CPU time to process the
+        // event before the caller enters tick().  On low-CPU CI
+        // runners, the daemon may otherwise never read the event
+        // and tick() hangs forever.
+        std::thread::yield_now();
     }
 
     /// Convenience: inject input data by ID.
@@ -395,7 +400,7 @@ impl Drop for NodeHarness {
         // blocking cleanup requests.  Without this, the test hangs
         // permanently — the daemon is stuck in recv() and never
         // responds to EventStreamDropped / CloseOutputs / OutputsDone.
-        std::thread::sleep(std::time::Duration::from_millis(200));
+        std::thread::sleep(std::time::Duration::from_millis(500));
     }
 }
 
