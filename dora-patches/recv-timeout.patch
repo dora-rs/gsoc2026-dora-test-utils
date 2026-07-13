@@ -1,15 +1,17 @@
 diff --git a/apis/rust/node/src/daemon_connection/node_integration_testing.rs b/apis/rust/node/src/daemon_connection/node_integration_testing.rs
-index 4866f579..8b9df8c6 100644
+index 4866f579..c5e898e2 100644
 --- a/apis/rust/node/src/daemon_connection/node_integration_testing.rs
 +++ b/apis/rust/node/src/daemon_connection/node_integration_testing.rs
-@@ -197,8 +197,9 @@ impl IntegrationTestingEvents {
+@@ -197,9 +197,10 @@ impl IntegrationTestingEvents {
              // on its own std::thread, so blocking is fine.  The receiver
              // is disconnected when the harness drops its input_tx sender,
              // which unblocks the thread and causes a clean shutdown.
 -            EventSource::Channel(rx) => match rx.recv() {
 +            EventSource::Channel(rx) => match rx.recv_timeout(std::time::Duration::from_millis(500)) {
                  Ok(e) => e,
-+                Err(flume::RecvError::Timeout) => return Ok(None),
-                 Err(flume::RecvError::Disconnected) => return Ok(None),
+-                Err(flume::RecvError::Disconnected) => return Ok(None),
++                Err(flume::RecvTimeoutError::Timeout) => return Ok(None),
++                Err(flume::RecvTimeoutError::Disconnected) => return Ok(None),
              },
          };
+ 
