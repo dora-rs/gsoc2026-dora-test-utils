@@ -31,7 +31,18 @@ jobs:
       - run: git clone https://github.com/dora-rs/dora.git dora && git -C dora checkout 45436aad124fe46463d0b0411e3922dae8ee9ebd
         working-directory: ${{ github.workspace }}
       - run: git -C dora apply ../dora-patches/testing-input-channel.patch
-      - run: cargo test --lib --tests -- --test-threads=1
+
+      # Cache dora build artifacts so we don't recompile from scratch.
+      - uses: actions/cache@v4
+        with:
+          path: dora/target
+          key: dora-target-${{ runner.os }}-${{ hashFiles('dora/**/*.rs', 'dora/**/Cargo.toml') }}
+
+      # Run in parallel (no --test-threads=1).  Each test gets its own
+      # daemon thread, avoiding the cross-test daemon starvation that
+      # causes permanent deadlocks on 2 vCPU runners when tests run
+      # sequentially and a previous test's daemon hasn't exited yet.
+      - run: cargo test --lib --tests
 
   clippy:
     name: cargo clippy
