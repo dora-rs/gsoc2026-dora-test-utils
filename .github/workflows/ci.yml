@@ -40,11 +40,10 @@ jobs:
           path: dora/target
           key: dora-target-${{ runner.os }}-${{ hashFiles('dora/**/*.rs', 'dora/**/Cargo.toml') }}
 
-      # Run in parallel (no --test-threads=1).  Each test gets its own
-      # daemon thread, avoiding the cross-test daemon starvation that
-      # causes permanent deadlocks on 2 vCPU runners when tests run
-      # sequentially and a previous test's daemon hasn't exited yet.
-      - run: cargo test --lib --tests
+      # Run lib unit tests, then e2e + smoke integration tests.
+      - run: cargo test --lib
+      - run: cargo test --test e2e
+      - run: cargo test --test smoke
 
   clippy:
     name: cargo clippy
