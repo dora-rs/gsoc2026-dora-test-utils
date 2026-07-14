@@ -154,10 +154,9 @@ impl NodeHarness {
             .expect("NodeHarness: input channel closed — close_input() was already called")
             .send(event)
             .expect("NodeHarness: input channel disconnected — node may have panicked");
-        // Yield so the daemon thread gets CPU time to process the
-        // event before the caller enters tick().  On low-CPU CI
-        // runners, the daemon may otherwise never read the event
-        // and tick() hangs forever.
+        // Yield CPU so the daemon thread can process the event before
+        // the caller enters tick().  drop-in-background handles the
+        // flume spinlock deadlock; this yield is for normal scheduling.
         std::thread::yield_now();
     }
 
@@ -378,28 +377,16 @@ impl NodeHarness {
 
 impl Drop for NodeHarness {
     fn drop(&mut self) {
-        // Close the input channel before the default field drops
-        // proceed.  This unblocks the daemon thread, which replies to
-        // the event stream thread and lets it exit.  The brief sleep
-        // gives the daemon thread a scheduling quantum on
-        // resource-constrained CI runners where the OS scheduler can
-        // starve background threads for longer than the 1s timeout
-        // used by EventStreamThreadHandle::drop.
-        //
-        // An unresponsive daemon at drop time causes a permanent hang:
-        // the node sends cleanup requests (EventStreamDropped,
-        // CloseOutputs, OutputsDone) to the daemon via a blocking
-        // oneshot, but the daemon is still stuck in recv().
+        // close_input() drops the flume sender in a background thread
+        // so the main thread never contends on flume 0.10's spinlock.
         self.close_input();
 
-        // On resource-constrained CI runners (2 vCPU), the daemon
-        // thread can be starved by the OS scheduler.  A brief sleep
-        // deschedules the current thread, forcing a context switch
-        // that gives the daemon time to wake from input_rx.recv() and
-        // process the disconnect before the subsequent node drop sends
-        // blocking cleanup requests.  Without this, the test hangs
-        // permanently — the daemon is stuck in recv() and never
-        // responds to EventStreamDropped / CloseOutputs / OutputsDone.
+        // Give the background thread time to drop the sender, and the
+        // daemon time to process the disconnect and reply to the event
+        // stream thread.  On low-CPU CI runners this may take several
+        // scheduling quanta.  After the sleep, the daemon is back in
+        // its request loop (receiver.blocking_recv) and ready to
+        // process the cleanup requests sent during node drop.
         std::thread::sleep(std::time::Duration::from_millis(500));
     }
 }
