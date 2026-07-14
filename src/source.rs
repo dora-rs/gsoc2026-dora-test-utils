@@ -10,28 +10,48 @@ use eyre::{Context, Result};
 
 type DataId = dora_node_api::dora_core::config::DataId;
 
-/// Configuration for a test source run.
+/// A single output specification: an output ID and its data.
 #[derive(Debug, Clone)]
-pub struct SourceConfig {
+pub struct OutputSpec {
     /// Output identifier to emit data on.
     pub output_id: String,
     /// DORA-format JSON payload: `{"data": [...], "data_type": {...}}`.
     pub data: serde_json::Value,
 }
 
-/// Run a test source: create a DORA node and emit loaded data.
+/// Configuration for a test source run.
+#[derive(Debug, Clone)]
+pub struct SourceConfig {
+    /// One or more outputs to emit.
+    pub outputs: Vec<OutputSpec>,
+}
+
+// Backward-compatible constructor from old API.
+impl SourceConfig {
+    pub fn single(output_id: String, data: serde_json::Value) -> Self {
+        Self {
+            outputs: vec![OutputSpec { output_id, data }],
+        }
+    }
+}
+
+/// Run a test source: create a DORA node and emit loaded data on
+/// one or more outputs.
 ///
 /// # Errors
 ///
-/// Returns an error if:
-/// - The `data` JSON is missing the `"data"` field
-/// - The `data` array is empty
-/// - The `"data_type"` field contains an invalid Arrow type
-/// - `DoraNode::init_from_env()` fails
-/// - `send_output()` fails
+/// Returns an error if any output spec is invalid, or if node
+/// initialization or send_output fails.
 pub fn run_test_source(config: SourceConfig) -> Result<()> {
+    for spec in &config.outputs {
+        emit_output(spec).with_context(|| format!("failed to emit output '{}'", spec.output_id))?;
+    }
+    Ok(())
+}
+
+fn emit_output(spec: &OutputSpec) -> Result<()> {
     // ── 1. Validate and extract data ──────────────────────────────
-    let data_array = config
+    let data_array = spec
         .data
         .get("data")
         .ok_or_else(|| eyre::eyre!("missing 'data' field in DORA-format input JSON"))?;
@@ -45,7 +65,7 @@ pub fn run_test_source(config: SourceConfig) -> Result<()> {
     }
 
     // ── 2. Parse data_type hint from JSON ─────────────────────────
-    let data_type: Option<arrow::datatypes::DataType> = config
+    let data_type: Option<arrow::datatypes::DataType> = spec
         .data
         .get("data_type")
         .map(|dt| {
@@ -60,16 +80,15 @@ pub fn run_test_source(config: SourceConfig) -> Result<()> {
         .map(|v| json_value_to_arrow_array(v, data_type.as_ref()))
         .collect::<Result<Vec<_>>>()?;
 
-    // ── 4. Initialize DORA node ───────────────────────────────────
+    let output_id: DataId = spec
+        .output_id
+        .parse()
+        .map_err(|e| eyre::eyre!("invalid output_id '{}': {e}", spec.output_id))?;
+
+    // ── 4. Initialize DORA node and emit each array ────────────────
     let (mut node, _events) =
         DoraNode::init_from_env().context("failed to initialize DORA node")?;
 
-    let output_id: DataId = config
-        .output_id
-        .parse()
-        .map_err(|e| eyre::eyre!("invalid output_id '{}': {e}", config.output_id))?;
-
-    // ── 5. Emit each array as a separate output message ───────────
     for array in arrays {
         node.send_output(output_id.clone(), MetadataParameters::default(), array)
             .context("send_output failed")?;
@@ -378,10 +397,7 @@ mod tests {
 
     /// Helper: create a minimal SourceConfig for testing.
     fn source_config(data: serde_json::Value) -> SourceConfig {
-        SourceConfig {
-            output_id: "test_out".to_string(),
-            data,
-        }
+        SourceConfig::single("test_out".to_string(), data)
     }
 
     #[test]
@@ -390,8 +406,8 @@ mod tests {
         let result = run_test_source(config);
         assert!(result.is_err());
         assert!(
-            format!("{}", result.unwrap_err()).contains("missing 'data' field"),
-            "error should mention missing 'data' field"
+            format!("{:#}", result.unwrap_err()).contains("missing 'data' field"),
+            "error should mention missing .data. field"
         );
     }
 
@@ -401,7 +417,7 @@ mod tests {
         let result = run_test_source(config);
         assert!(result.is_err());
         assert!(
-            format!("{}", result.unwrap_err()).contains("empty"),
+            format!("{:#}", result.unwrap_err()).contains("empty"),
             "error should mention empty array"
         );
     }
@@ -412,7 +428,7 @@ mod tests {
         let result = run_test_source(config);
         assert!(result.is_err());
         assert!(
-            format!("{}", result.unwrap_err()).contains("must be a JSON array"),
+            format!("{:#}", result.unwrap_err()).contains("must be a JSON array"),
             "error should mention must be array"
         );
     }
@@ -504,7 +520,7 @@ mod tests {
         let result = json_value_to_arrow_array(&serde_json::json!(256), Some(&dt));
         assert!(result.is_err());
         assert!(
-            format!("{}", result.unwrap_err()).contains("out of range for UInt8"),
+            format!("{:#}", result.unwrap_err()).contains("out of range for UInt8"),
             "error should mention out of range"
         );
     }
@@ -566,7 +582,7 @@ mod tests {
         let result = json_value_to_arrow_array(&serde_json::Value::Null, None);
         assert!(result.is_err());
         assert!(
-            format!("{}", result.unwrap_err()).contains("null"),
+            format!("{:#}", result.unwrap_err()).contains("null"),
             "error should mention null"
         );
     }
@@ -578,7 +594,7 @@ mod tests {
             arrow::datatypes::DataType::Timestamp(arrow::datatypes::TimeUnit::Millisecond, None);
         let result = json_value_to_arrow_array(&serde_json::json!(42), Some(&dt));
         assert!(result.is_err());
-        let msg = format!("{}", result.unwrap_err());
+        let msg = format!("{:#}", result.unwrap_err());
         assert!(
             msg.contains("not supported"),
             "error should mention unsupported type, got: {msg}"
@@ -606,7 +622,7 @@ mod tests {
             result.is_err(),
             "value exceeding u32::MAX should return an error"
         );
-        let msg = format!("{}", result.unwrap_err());
+        let msg = format!("{:#}", result.unwrap_err());
         assert!(
             msg.contains("out of range"),
             "error should mention 'out of range', got: {msg}"

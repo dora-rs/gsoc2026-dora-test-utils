@@ -1,0 +1,39 @@
+# Multi-output echo pipeline — test-source emits on two outputs,
+# each goes through an echo node to a dedicated sink.
+#
+# Verifies multi-output support in test-source and proper routing
+# in multi-node dataflows.
+
+nodes:
+  - id: test-source
+    path: ../../target/debug/test-source
+    args: "--output data_a:tests/fixtures/source-data.json --output data_b:tests/fixtures/classifier-source.json"
+    outputs:
+      - data_a
+      - data_b
+
+  - id: echo-a
+    path: ../../target/debug/echo-node
+    inputs:
+      data_a: test-source/data_a
+    outputs:
+      - data_a
+
+  - id: echo-b
+    path: ../../target/debug/echo-node
+    inputs:
+      data_b: test-source/data_b
+    outputs:
+      - data_b
+
+  - id: test-sink-a
+    path: ../../target/debug/test-sink
+    inputs:
+      data_a: echo-a/data_a
+    args: "--expected-file tests/fixtures/expected-output.json --output-file result-a.json"
+
+  - id: test-sink-b
+    path: ../../target/debug/test-sink
+    inputs:
+      data_b: echo-b/data_b
+    args: "--expected-file tests/fixtures/classifier-expected-high.json --output-file result-b.json"
