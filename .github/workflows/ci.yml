@@ -38,15 +38,16 @@ jobs:
           path: dora/target
           key: dora-target-${{ runner.os }}-${{ hashFiles('dora/**/*.rs', 'dora/**/Cargo.toml') }}
 
-      # Run lib unit tests, then e2e + smoke.  Retry up to 3 times
-      # because flume 0.10 spinlock can cause intermittent deadlocks
-      # on 2 vCPU CI runners (known dora-rs/dora#1603 issue).
-      - name: cargo test --lib (retry ×3)
-        run: for i in 1 2 3; do cargo test --lib && exit 0; done; exit 1
-      - name: cargo test --test e2e (retry ×3)
-        run: for i in 1 2 3; do cargo test --test e2e && exit 0; done; exit 1
-      - name: cargo test --test smoke (retry ×3)
-        run: for i in 1 2 3; do cargo test --test smoke && exit 0; done; exit 1
+      # Run lib unit tests, then e2e + smoke.  Each step uses
+      # `timeout` so a deadlocked test is killed and retried
+      # instead of blocking the entire job.  Retry up to 3 times
+      # because flume 0.10 spinlock deadlocks are probabilistic.
+      - name: cargo test --lib (retry ×3, timeout 5m)
+        run: for i in 1 2 3; do timeout 120 cargo test --lib && exit 0; done; exit 1
+      - name: cargo test --test e2e (retry ×3, timeout 5m)
+        run: for i in 1 2 3; do timeout 120 cargo test --test e2e && exit 0; done; exit 1
+      - name: cargo test --test smoke (retry ×3, timeout 5m)
+        run: for i in 1 2 3; do timeout 120 cargo test --test smoke && exit 0; done; exit 1
 
   clippy:
     name: cargo clippy
