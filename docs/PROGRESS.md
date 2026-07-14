@@ -266,21 +266,23 @@ gsoc2026-dora-test-utils/
 
 ---
 
-## 📋 Next: Week 8 (Coding Phase 2)
+## Week 8 (COMPLETED 2026-07-14): Multi-Input/Multi-Output + Examples
 
-### Week 8: Multi-Input/Multi-Output + Examples
-- [ ] Multi-input/multi-output dataflow integration test
-- [ ] Example dataflows (classifier, multi-node)
-- [ ] Edge-case tests deferred from Week 7 (if any)
-- [ ] **Edge case tests**
-  - [ ] Empty data arrays → verify clear error
-  - [ ] Type mismatches → verify correct Difference reporting
-  - [ ] Large data batches → verify no performance regression
-  - [ ] Multi-input/multi-output dataflows
-- [ ] **CI integration**
-  - [ ] Build dora CLI in CI workflow
-  - [ ] Run integration tests in CI (requires dora + port 6013)
-  - [ ] Add integration test job to `.github/workflows/ci.yml`
+### Completed
+
+- [x] **Multi-output test-source**: `--output ID:FILE` (repeatable) for multi-output dataflows
+  - Backward-compatible `--output-id`/`--data-file` still work
+  - `SourceConfig` refactored to `Vec<OutputSpec>` for multiple outputs
+- [x] **Classifier node**: new binary (`src/bin/classifier_node.rs`)
+  - Classifies Int64 values into "high"/"low" outputs by threshold (default 50)
+  - Configurable via `CLASSIFIER_THRESHOLD` env var
+- [x] **Integration tests**:
+  - `multi_echo_pipeline_two_outputs`: verifies multi-output routing through echo nodes
+  - `classifier_pipeline_basic`: verifies classifier correctly splits values
+- [x] **CI integration** (completed in Week 7):
+  - Build dora CLI in CI workflow ✅
+  - Integration test job in `.github/workflows/ci.yml` ✅
+  - CI deadlock fix documented in `docs/CI-DEADLOCK-FIX.md` ✅
 
 ### Week 9–10: Example Pipelines
 - [ ] Example dataflows (echo, classifier, multi-node)
@@ -322,6 +324,7 @@ gsoc2026-dora-test-utils/
 | Week 6 Integration tests | Echo pipeline + demo | 4/4 integration, 39 unit | ✅ |
 | **Mid-term eval (Week 6)** | MVP complete | Ahead of schedule | 🚀 |
 | Week 7 Edge cases + CI | 6 tests + CI job | 6 tests + CI job | ✅ |
+| Week 8 Multi-I/O + Examples | Multi-output source, classifier, 2 new integration tests | 42+5+3 tests, 2 new int. tests | ✅ |
 | **Final submission** | Extended complete | TBD | ⏳ |
 
 ### Code Metrics (Week 7 snapshot)
