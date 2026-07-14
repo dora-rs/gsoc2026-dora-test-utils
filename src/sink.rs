@@ -286,7 +286,10 @@ fn compare_semantic(
                             "conversion error at index {i}: {e:#}. Original value: {v}"
                         ),
                     });
-                    // Use 0-length NullArray placeholder so loop proceeds.
+                    // Use 0-length NullArray placeholder so the indices stay
+                    // aligned.  The comparison closure below skips these
+                    // placeholders to avoid redundant "value mismatch"
+                    // entries alongside the conversion error above.
                     Arc::new(arrow::array::NullArray::new(0))
                 }
             }
@@ -296,24 +299,49 @@ fn compare_semantic(
     let mut result =
         compare_sequences(&expected_arrays, received, |exp, rec, i| match (exp, rec) {
             (Some(e), Some(r)) => {
-                // Semantic equality: if the received array has a
-                // different Arrow type, try casting it to the
-                // expected type first (e.g. Int64 → Int32).
-                // If the cast succeeds and values match, the
-                // arrays are semantically equal.
+                // Skip NullArray(0) placeholders inserted for conversion
+                // errors — those are already reported above.
+                if e.data_type() == &arrow::datatypes::DataType::Null && e.is_empty() {
+                    return None;
+                }
+                // Semantic equality: when types differ, widen before
+                // comparing.  Float types preserve fractional parts,
+                // so prefer them over integers to avoid silent
+                // truncation (e.g. Float64(1.7) ≠ Int32(1)).
                 let matches = if e.data_type() == r.data_type() {
                     e == r
                 } else {
-                    arrow::compute::cast(r, e.data_type())
-                        .map(|casted| e.as_ref() == casted.as_ref())
-                        .unwrap_or(false)
+                    let target = match (e.data_type(), r.data_type()) {
+                        (arrow::datatypes::DataType::Float64, _)
+                        | (_, arrow::datatypes::DataType::Float64) => {
+                            arrow::datatypes::DataType::Float64
+                        }
+                        (arrow::datatypes::DataType::Float32, _)
+                        | (_, arrow::datatypes::DataType::Float32) => {
+                            arrow::datatypes::DataType::Float32
+                        }
+                        _ => e.data_type().clone(),
+                    };
+                    let cast_e = arrow::compute::cast(e, &target);
+                    let cast_r = arrow::compute::cast(r, &target);
+                    match (cast_e, cast_r) {
+                        (Ok(ce), Ok(cr)) => ce.as_ref() == cr.as_ref(),
+                        _ => false,
+                    }
                 };
                 if matches {
                     None
                 } else {
                     Some(Difference {
                         index: Some(i),
-                        message: format!("value mismatch at index {i}: expected {e:?}, got {r:?}"),
+                        message: format!(
+                            "value mismatch at index {i}: \
+                             expected {}[{}], got {}[{}]",
+                            e.data_type(),
+                            e.len(),
+                            r.data_type(),
+                            r.len(),
+                        ),
                     })
                 }
             }
@@ -456,6 +484,114 @@ mod tests {
         assert!(
             result.r#match,
             "semantic comparison should tolerate Float32 expected vs Float64 received"
+        );
+    }
+
+    #[test]
+    fn test_compare_semantic_incompatible_types() {
+        // Expected is a string but received is an integer — the Arrow type
+        // cast (Int64 → Utf8) succeeds mechanically, but the values differ
+        // ("42" ≠ "hello"), so semantic comparison must report a mismatch.
+        let expected_str = serde_json::json!("hello");
+        let expected: Vec<&serde_json::Value> = vec![&expected_str];
+        let received: Vec<arrow::array::ArrayRef> =
+            vec![std::sync::Arc::new(arrow::array::Int64Array::from(vec![
+                42,
+            ]))];
+        let result = compare_semantic(&expected, &received, None);
+        assert!(
+            !result.r#match,
+            "semantic comparison of String vs Int64 should report mismatch, got {result:#?}"
+        );
+        assert_eq!(result.differences.len(), 1, "expected exactly 1 difference");
+        assert_eq!(
+            result.differences[0].index,
+            Some(0),
+            "difference should be at index 0"
+        );
+    }
+
+    #[test]
+    fn test_compare_strict_value_mismatch_string_vs_int() {
+        // Strict mode compares JSON representations.  A string expected
+        // value and an integer received value are never equal in JSON.
+        let expected_str = serde_json::json!("hello");
+        let expected: Vec<&serde_json::Value> = vec![&expected_str];
+        let received: Vec<arrow::array::ArrayRef> =
+            vec![std::sync::Arc::new(arrow::array::Int64Array::from(vec![
+                42,
+            ]))];
+        let result = compare_strict(&expected, &received).unwrap();
+        assert!(
+            !result.r#match,
+            "strict comparison of String vs Int64 should report mismatch, got {result:#?}"
+        );
+        assert!(!result.differences.is_empty());
+    }
+
+    #[test]
+    fn test_compare_semantic_large_batch_1000() {
+        // 1000-element comparison must finish correctly in under 500 ms.
+        use std::time::Instant;
+
+        let values: Vec<serde_json::Value> = (0_i64..1000).map(|i| serde_json::json!(i)).collect();
+        let expected: Vec<&serde_json::Value> = values.iter().collect();
+        let received: Vec<arrow::array::ArrayRef> = (0_i64..1000)
+            .map(|i| {
+                std::sync::Arc::new(arrow::array::Int64Array::from(vec![i]))
+                    as arrow::array::ArrayRef
+            })
+            .collect();
+
+        let start = Instant::now();
+        let result = compare_semantic(&expected, &received, None);
+        let elapsed = start.elapsed();
+
+        assert!(result.r#match, "1000 identical elements should match");
+        assert!(result.differences.is_empty(), "expected 0 differences");
+        assert_eq!(result.expected_count, 1000);
+        assert_eq!(result.received_count, 1000);
+        assert!(
+            elapsed.as_millis() < 500,
+            "1000-element comparison took {}ms, expected < 500ms",
+            elapsed.as_millis()
+        );
+    }
+
+    #[test]
+    fn test_compare_semantic_large_batch_1000_one_mismatch() {
+        // 1000 elements with the last one wrong → exactly 1 difference reported.
+        let mut values: Vec<serde_json::Value> =
+            (0_i64..1000).map(|i| serde_json::json!(i)).collect();
+        // Corrupt the last expected value.
+        values[999] = serde_json::json!(9999_i64);
+
+        let expected: Vec<&serde_json::Value> = values.iter().collect();
+        let received: Vec<arrow::array::ArrayRef> = (0_i64..1000)
+            .map(|i| {
+                std::sync::Arc::new(arrow::array::Int64Array::from(vec![i]))
+                    as arrow::array::ArrayRef
+            })
+            .collect();
+
+        let result = compare_semantic(&expected, &received, None);
+
+        assert!(
+            !result.r#match,
+            "mismatch at index 999 should fail the comparison"
+        );
+        assert_eq!(result.expected_count, 1000);
+        assert_eq!(result.received_count, 1000);
+        assert_eq!(
+            result.differences.len(),
+            1,
+            "expected exactly 1 difference, got {}: {result:#?}",
+            result.differences.len()
+        );
+        assert_eq!(
+            result.differences[0].index,
+            Some(999),
+            "difference should be at index 999"
         );
     }
 }

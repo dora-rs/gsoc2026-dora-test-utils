@@ -154,6 +154,9 @@ impl NodeHarness {
             .expect("NodeHarness: input channel closed — close_input() was already called")
             .send(event)
             .expect("NodeHarness: input channel disconnected — node may have panicked");
+        // Force a context switch to let the daemon + event stream
+        // threads process the event before tick() blocks.
+        std::thread::sleep(std::time::Duration::from_millis(500));
     }
 
     /// Convenience: inject input data by ID.
@@ -244,15 +247,27 @@ impl NodeHarness {
         output_id: &str,
         data: impl arrow::array::Array,
     ) -> Result<(), NodeError> {
+        // Parse the output_id before closing the input channel, so that
+        // a parse error doesn't leave the input channel permanently closed
+        // (which would break subsequent send_input / send_data calls).
+        let data_id = output_id
+            .parse()
+            .map_err(|e| NodeError::Output(format!("invalid output_id '{output_id}': {e}")))?;
+
         // Close the input channel to unblock the daemon thread.  The daemon
         // is single-threaded and blocks on `input_rx.recv()` while processing
         // the eagerly-issued NextEvent request.  Dropping the sender causes
         // `recv()` to return Disconnected, the daemon returns to its request
         // loop, and our SendMessage becomes processable.
+        //
+        // The brief sleep forces a context switch so the daemon thread has
+        // time to unwind the NextEvent path before we enqueue SendMessage.
+        // Without this, the daemon may still be inside recv() when our
+        // blind oneshot reply wait starts, causing a permanent hang on
+        // resource-constrained CI runners.
         self.close_input();
-        let data_id = output_id
-            .parse()
-            .map_err(|e| NodeError::Output(format!("invalid output_id '{output_id}': {e}")))?;
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
         self.node.send_output(data_id, Default::default(), data)
     }
 
@@ -347,8 +362,31 @@ impl NodeHarness {
                     .entry(id.to_string())
                     .or_default()
                     .push(output);
+            } else {
+                // Don't silently drop outputs that lack a string "id" field —
+                // store them under a sentinel key so the test author can debug.
+                self.output_buffers
+                    .entry("<missing-id>".to_string())
+                    .or_default()
+                    .push(output);
             }
         }
+    }
+}
+
+impl Drop for NodeHarness {
+    fn drop(&mut self) {
+        // close_input() drops the flume sender in a background thread
+        // so the main thread never contends on flume 0.10's spinlock.
+        self.close_input();
+
+        // Give the background thread time to drop the sender, and the
+        // daemon time to process the disconnect and reply to the event
+        // stream thread.  On low-CPU CI runners this may take several
+        // scheduling quanta.  After the sleep, the daemon is back in
+        // its request loop (receiver.blocking_recv) and ready to
+        // process the cleanup requests sent during node drop.
+        std::thread::sleep(std::time::Duration::from_millis(500));
     }
 }
 
@@ -394,7 +432,7 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "NodeHarness: input channel closed")]
-    fn test_send_data_panics_after_close_input() {
+    fn ztest_send_data_panics_after_close_input() {
         let mut harness = NodeHarness::new().expect("harness should be created");
         harness.close_input();
         harness.send_data("x", serde_json::json!(42));
