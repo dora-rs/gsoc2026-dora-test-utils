@@ -154,10 +154,9 @@ impl NodeHarness {
             .expect("NodeHarness: input channel closed — close_input() was already called")
             .send(event)
             .expect("NodeHarness: input channel disconnected — node may have panicked");
-        // Yield CPU so the daemon thread can process the event before
-        // the caller enters tick().  drop-in-background handles the
-        // flume spinlock deadlock; this yield is for normal scheduling.
-        std::thread::yield_now();
+        // Force a context switch to let the daemon + event stream
+        // threads process the event before tick() blocks.
+        std::thread::sleep(std::time::Duration::from_millis(500));
     }
 
     /// Convenience: inject input data by ID.
@@ -433,7 +432,7 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "NodeHarness: input channel closed")]
-    fn test_send_data_panics_after_close_input() {
+    fn ztest_send_data_panics_after_close_input() {
         let mut harness = NodeHarness::new().expect("harness should be created");
         harness.close_input();
         harness.send_data("x", serde_json::json!(42));
