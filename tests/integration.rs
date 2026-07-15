@@ -43,11 +43,13 @@ fn build_binaries() {
         let mut args = vec![
             "build",
             "--bin",
-            "test_source",
+            "test-source",
             "--bin",
             "test-sink",
             "--bin",
             "echo-node",
+            "--bin",
+            "classifier-node",
         ];
         if !cfg!(debug_assertions) {
             args.push("--release");
@@ -111,7 +113,7 @@ fn run_echo_pipeline(
     )?;
 
     // ── Generate YAML dataflow with absolute paths ────────────
-    let source_bin = bin_path("test_source");
+    let source_bin = bin_path("test-source");
     let echo_bin = bin_path("echo-node");
     let sink_bin = bin_path("test-sink");
 

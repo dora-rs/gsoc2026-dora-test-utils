@@ -1,7 +1,7 @@
 # Echo pipeline — demo dataflow for test-source → echo-node → test-sink.
 #
 # Usage (from crate root, after cargo build):
-#   cargo build --bin test_source --bin test-sink --bin echo-node
+#   cargo build --bin test-source --bin test-sink --bin echo-node
 #   dora/target/debug/dora run tests/fixtures/echo-dataflow.yml --stop-after 10s
 #   cat result.json
 #
@@ -12,7 +12,7 @@
 
 nodes:
   - id: test-source
-    path: ../../target/debug/test_source
+    path: ../../target/debug/test-source
     args: "--output-id data --data-file source-data.json"
     outputs:
       - data

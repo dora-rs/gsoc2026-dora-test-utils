@@ -18,6 +18,10 @@ struct Cli {
     #[arg(long)]
     data_file: Option<PathBuf>,
 
+    /// Inline JSON data (single-output mode, backward compatible).
+    #[arg(long)]
+    inline_data: Option<String>,
+
     /// Multi-output specs: "output_id:data_file.json". Repeatable.
     #[arg(long = "output", value_name = "ID:FILE")]
     outputs: Vec<String>,
@@ -62,19 +66,27 @@ fn main() {
         });
     }
 
-    // Single-output backward compat: --output-id + --data-file
+    // Single-output backward compat: --output-id + (--data-file or --inline-data)
     if specs.is_empty() {
         let output_id = cli.output_id.as_deref().unwrap_or("data");
-        let data_file = cli.data_file.as_ref().expect("--data-file or --output required");
-
-        let contents = std::fs::read_to_string(data_file).unwrap_or_else(|e| {
-            eprintln!("error: failed to read data file '{}': {e}", data_file.display());
+        let data: serde_json::Value = if let Some(inline) = &cli.inline_data {
+            serde_json::from_str(inline).unwrap_or_else(|e| {
+                eprintln!("error: invalid inline JSON: {e}");
+                std::process::exit(1);
+            })
+        } else if let Some(data_file) = &cli.data_file {
+            let contents = std::fs::read_to_string(data_file).unwrap_or_else(|e| {
+                eprintln!("error: failed to read data file '{}': {e}", data_file.display());
+                std::process::exit(1);
+            });
+            serde_json::from_str(&contents).unwrap_or_else(|e| {
+                eprintln!("error: invalid JSON in '{}': {e}", data_file.display());
+                std::process::exit(1);
+            })
+        } else {
+            eprintln!("error: --data-file, --inline-data, or --output is required");
             std::process::exit(1);
-        });
-        let data: serde_json::Value = serde_json::from_str(&contents).unwrap_or_else(|e| {
-            eprintln!("error: invalid JSON in '{}': {e}", data_file.display());
-            std::process::exit(1);
-        });
+        };
         specs.push(OutputSpec {
             output_id: output_id.to_string(),
             data,
