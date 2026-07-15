@@ -36,35 +36,59 @@ impl SourceConfig {
 }
 
 /// Run a test source: create a DORA node and emit loaded data on
-/// one or more outputs.
+/// one or more outputs.  A single DoraNode is created and reused
+/// for all output specs, matching daemon expectations of one
+/// Register/OutputsDone lifecycle per process.
 ///
 /// # Errors
 ///
 /// Returns an error if any output spec is invalid, or if node
 /// initialization or send_output fails.
 pub fn run_test_source(config: SourceConfig) -> Result<()> {
+    // Validate all specs before touching the daemon (unit-test safe).
     for spec in &config.outputs {
-        emit_output(spec).with_context(|| format!("failed to emit output '{}'", spec.output_id))?;
+        validate_spec(spec)?;
+    }
+
+    let (mut node, _events) =
+        DoraNode::init_from_env().context("failed to initialize DORA node")?;
+
+    for spec in &config.outputs {
+        emit_output(&mut node, spec)
+            .with_context(|| format!("failed to emit output '{}'", spec.output_id))?;
     }
     Ok(())
 }
 
-fn emit_output(spec: &OutputSpec) -> Result<()> {
-    // ── 1. Validate and extract data ──────────────────────────────
+/// Validate an OutputSpec without touching the daemon.  Fails early
+/// with a clear error so unit tests can assert on error messages.
+fn validate_spec(spec: &OutputSpec) -> Result<()> {
     let data_array = spec
         .data
         .get("data")
         .ok_or_else(|| eyre::eyre!("missing 'data' field in DORA-format input JSON"))?;
-
-    let elements = data_array
-        .as_array()
-        .ok_or_else(|| eyre::eyre!("'data' field must be a JSON array, got: {}", data_array))?;
-
-    if elements.is_empty() {
+    if !data_array.is_array() {
+        eyre::bail!("'data' field must be a JSON array, got: {}", data_array);
+    }
+    if data_array.as_array().map(|a| a.is_empty()).unwrap_or(false) {
         eyre::bail!("'data' array is empty — nothing to emit");
     }
+    // Also validate output_id is parseable
+    let _: DataId = spec
+        .output_id
+        .parse()
+        .map_err(|e| eyre::eyre!("invalid output_id '{}': {e}", spec.output_id))?;
+    Ok(())
+}
 
-    // ── 2. Parse data_type hint from JSON ─────────────────────────
+fn emit_output(node: &mut DoraNode, spec: &OutputSpec) -> Result<()> {
+    // Data was already validated by validate_spec() — unwrap is safe here.
+    let elements = spec.data["data"].as_array().unwrap();
+    if elements.is_empty() {
+        return Ok(());
+    }
+
+    // ── Parse data_type hint and convert ──────────────────────────
     let data_type: Option<arrow::datatypes::DataType> = spec
         .data
         .get("data_type")
@@ -74,7 +98,7 @@ fn emit_output(spec: &OutputSpec) -> Result<()> {
         })
         .transpose()?;
 
-    // ── 3. Convert each JSON element to an Arrow array ────────────
+    // ── Convert each JSON element to an Arrow array ───────────────
     let arrays: Vec<_> = elements
         .iter()
         .map(|v| json_value_to_arrow_array(v, data_type.as_ref()))
@@ -85,10 +109,7 @@ fn emit_output(spec: &OutputSpec) -> Result<()> {
         .parse()
         .map_err(|e| eyre::eyre!("invalid output_id '{}': {e}", spec.output_id))?;
 
-    // ── 4. Initialize DORA node and emit each array ────────────────
-    let (mut node, _events) =
-        DoraNode::init_from_env().context("failed to initialize DORA node")?;
-
+    // ── 4. Emit each array through the shared node ─────────────────
     for array in arrays {
         node.send_output(output_id.clone(), MetadataParameters::default(), array)
             .context("send_output failed")?;
