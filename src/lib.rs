@@ -59,11 +59,11 @@
 //! use dora_test_utils::source::{run_test_source, SourceConfig};
 //! use dora_test_utils::sink::{run_test_sink, SinkConfig};
 //!
-//! // Source: emit test data from a JSON file.
-//! let config = SourceConfig {
-//!     output_id: "data".into(),
-//!     data: serde_json::json!({"data": [42, 99], "data_type": "Int32"}),
-//! };
+//! // Source: emit test data on one or more outputs.
+//! let config = SourceConfig::single(
+//!     "data".into(),
+//!     serde_json::json!({"data": [42, 99], "data_type": "Int32"}),
+//! );
 //! run_test_source(config)?;
 //!
 //! // Sink: capture and compare with expected output.
