@@ -49,3 +49,15 @@ serial_test = "3"
 name = "echo-node"
 path = "tests/fixtures/echo-node.rs"
 test = false
+
+[[bin]]
+name = "classifier-node"
+path = "src/bin/classifier_node.rs"
+
+[[bin]]
+name = "test-sink"
+path = "src/bin/test-sink.rs"
+
+[[bin]]
+name = "test-source"
+path = "src/bin/test_source.rs"
