@@ -266,39 +266,21 @@ gsoc2026-dora-test-utils/
 
 ---
 
-## Week 8 (COMPLETED 2026-07-15): Multi-Input/Multi-Output + Examples
+## 📋 Next: Week 8 (Coding Phase 2)
 
-### Completed
-
-- [x] **Multi-output test-source**: `--output ID:FILE` (repeatable) for multi-output dataflows
-  - Backward-compatible `--output-id`/`--data-file`/`--inline-data` still work
-  - `SourceConfig` refactored to `Vec<OutputSpec>` for multiple outputs
-- [x] **Classifier node**: new binary (`src/bin/classifier_node.rs`)
-  - Classifies Int64 values into "high"/"low" outputs by threshold (default 50)
-  - Configurable via `CLASSIFIER_THRESHOLD` env var
-- [x] **Integration tests** (2 new):
-  - `multi_echo_pipeline_two_outputs`: verifies multi-output routing
-  - `classifier_pipeline_basic`: verifies classifier splits correctly
-- [x] **`run_test_source` restructuring**: single `DoraNode` reused across all `OutputSpec`s
-  - Prevents daemon rejecting duplicate `Register` messages (review finding)
-- [x] **Code review fixes** (2026-07-15):
-  - Binary name: `test_source` → `test-source` (underscore/hyphen mismatch)
-  - `classifier-node` added to `build_binaries()`
-  - `--inline-data` restored (removed in refactor)
-  - `.expect()` → `eprintln! + exit(1)` in backward-compat path
-  - Stale `lib.rs` doc example updated to `SourceConfig::single()`
-- [x] **CI**: all jobs passing (Week 7 fix)
-
-### Files Changed (Week 8)
-| File | Change |
-|------|--------|
-| `src/source.rs` | `SourceConfig` → `Vec<OutputSpec>`, `validate_spec()`, single-node `emit_output` |
-| `src/bin/test_source.rs` | Multi-output `--output ID:FILE`, restore `--inline-data` |
-| `src/bin/classifier_node.rs` | New: threshold classifier binary |
-| `Cargo.toml` | +`classifier-node`, +`test-source`, +`test-sink` bin entries |
-| `tests/integration.rs` | +`bin_dir()`, +2 pipeline helpers, +2 tests |
-| `tests/fixtures/` | +classifier & multi-echo dataflow YAML + JSON fixtures |
-| `docs/PROGRESS.md` | Week 8 updates |
+### Week 8: Multi-Input/Multi-Output + Examples
+- [ ] Multi-input/multi-output dataflow integration test
+- [ ] Example dataflows (classifier, multi-node)
+- [ ] Edge-case tests deferred from Week 7 (if any)
+- [ ] **Edge case tests**
+  - [ ] Empty data arrays → verify clear error
+  - [ ] Type mismatches → verify correct Difference reporting
+  - [ ] Large data batches → verify no performance regression
+  - [ ] Multi-input/multi-output dataflows
+- [ ] **CI integration**
+  - [ ] Build dora CLI in CI workflow
+  - [ ] Run integration tests in CI (requires dora + port 6013)
+  - [ ] Add integration test job to `.github/workflows/ci.yml`
 
 ### Week 9–10: Example Pipelines
 - [ ] Example dataflows (echo, classifier, multi-node)
@@ -340,21 +322,18 @@ gsoc2026-dora-test-utils/
 | Week 6 Integration tests | Echo pipeline + demo | 4/4 integration, 39 unit | ✅ |
 | **Mid-term eval (Week 6)** | MVP complete | Ahead of schedule | 🚀 |
 | Week 7 Edge cases + CI | 6 tests + CI job | 6 tests + CI job | ✅ |
-| Week 8 Multi-I/O + Examples | Multi-output source, classifier, 2 new integration tests | 42+5+3 tests, 2 new int. tests | ✅ |
 | **Final submission** | Extended complete | TBD | ⏳ |
 
-### Code Metrics (Week 8 snapshot)
+### Code Metrics (Week 7 snapshot)
 
-| Metric | Week 6 | Week 7 | Week 8 |
-|--------|--------|--------|--------|
-| Total Rust source files | 10 | 10 | 11 (+classifier_node) |
-| Rust binaries | 2 | 2 | 4 (+test-source, +classifier-node) |
-| Total lines (src/ + tests/) | ~2,500 | ~2,800 | ~3,300 |
-| Library unit tests | 39 | 45 | 45 |
-| E2E tests | 5 | 5 | 5 |
-| Integration tests | 4 | 4 | 6 (+multi-echo, +classifier) |
-| Smoke tests | 3 | 3 | 3 |
-| CI jobs | 4 | 5 | 5 |
-| CI gates (fmt, clippy, test) | Passing | Passing | Passing |
-| Dataflow fixture YAMLs | 1 | 1 | 3 (+classifier, +multi-echo) |
-| Code review findings fixed | — | — | 6 critical, 8 total |
+| Metric | Week 6 | Week 7 |
+|--------|-------|
+| Total Rust source files | 10 |
+| Total lines (src/ + tests/) | ~2,500 |
+| Library unit tests | 39 | 45 |
+| E2E tests | 5 | 5 |
+| Integration tests | 4 | 4 |
+| CI jobs | 4 | 5 |
+| Mock tests | 3 |
+| CI gates (fmt, clippy, test) | All passing |
+| Code review rounds | 3 (max-effort, 27 findings fixed) |

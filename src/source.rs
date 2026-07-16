@@ -643,7 +643,7 @@ mod tests {
             result.is_err(),
             "value exceeding u32::MAX should return an error"
         );
-        let msg = format!("{:#}", result.unwrap_err());
+        let msg = format!("{}", result.unwrap_err());
         assert!(
             msg.contains("out of range"),
             "error should mention 'out of range', got: {msg}"
