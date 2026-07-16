@@ -450,8 +450,14 @@ fn run_classifier_pipeline(
     let expected_high_file = tmp_path.join("expected_high.json");
     let expected_low_file = tmp_path.join("expected_low.json");
     std::fs::write(&source_file, serde_json::to_string_pretty(source)?)?;
-    std::fs::write(&expected_high_file, serde_json::to_string_pretty(expected_high)?)?;
-    std::fs::write(&expected_low_file, serde_json::to_string_pretty(expected_low)?)?;
+    std::fs::write(
+        &expected_high_file,
+        serde_json::to_string_pretty(expected_high)?,
+    )?;
+    std::fs::write(
+        &expected_low_file,
+        serde_json::to_string_pretty(expected_low)?,
+    )?;
 
     let yaml = format!(
         r#"nodes:
@@ -514,14 +520,17 @@ fn classifier_pipeline_basic() {
     }
     build_binaries();
 
-    let source = serde_json::json!({"data": [10, 25, 60, 90, 45, 75, 30, 100, 50], "data_type": "Int64"});
+    let source =
+        serde_json::json!({"data": [10, 25, 60, 90, 45, 75, 30, 100, 50], "data_type": "Int64"});
     let expected_high = serde_json::json!({"data": [60, 90, 75, 100], "data_type": "Int64"});
     let expected_low = serde_json::json!({"data": [10, 25, 45, 30, 50], "data_type": "Int64"});
 
-    let (result_high, result_low) =
-        run_classifier_pipeline(&source, &expected_high, &expected_low)
-            .expect("classifier pipeline should succeed");
+    let (result_high, result_low) = run_classifier_pipeline(&source, &expected_high, &expected_low)
+        .expect("classifier pipeline should succeed");
 
-    assert!(result_high.r#match, "high output mismatch: {result_high:#?}");
+    assert!(
+        result_high.r#match,
+        "high output mismatch: {result_high:#?}"
+    );
     assert!(result_low.r#match, "low output mismatch: {result_low:#?}");
 }

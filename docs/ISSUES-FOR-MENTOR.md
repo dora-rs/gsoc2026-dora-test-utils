@@ -34,6 +34,29 @@ Full details in `docs/CI-DEADLOCK-FIX.md`.
 
 Dora upstream should replace `TestingInput::Channel(flume::Receiver)` with `TestingInput::Channel(tokio::sync::mpsc::Receiver)`, matching the event stream migration already done.
 
+### Impact of Current Workaround
+
+| Aspect | Status |
+|--------|--------|
+| Core tests (sink, source, traits, mock) | ✅ Run reliably on CI |
+| Harness unit tests (3 tests) | ⚠️ Skipped from main run; retry×5 with `continue-on-error: true` |
+| E2E tests (5 tests) | ⚠️ Same as harness — retried separately, failures tolerated |
+| Integration tests | ✅ Run serially, unaffected |
+| Local development | ⚠️ ~77% pass rate for e2e; `--test-threads=1` required |
+
+The workaround is functional but brittle: harness/e2e test failures on CI are silently tolerated, and the root cause (flume spinlock) will affect any future tests that use `TestingInput::Channel`.
+
+### Discussion Point for Mentor
+
+> **Should I open a PR against `dora-rs/dora` to migrate `TestingInput::Channel` from `flume::Receiver` to `tokio::sync::mpsc::Receiver`?**
+>
+> Considerations:
+> - Pro: eliminates the deadlock at the source; harness tests can run reliably on CI without workarounds; aligns with the event stream migration already done in dora
+> - Con: touches upstream dora code; needs review from dora maintainers; may have merge timeline uncertainty
+> - Alternative: wait for a planned flume 0.11 migration (if one exists)
+>
+> If the mentor approves, this can be scoped as a Week 9–10 task alongside example pipelines.
+
 ---
 
 ## Issue 2: Integration tests silently pass (green) when dora CLI is not on PATH
@@ -130,10 +153,10 @@ Restored `--inline-data` as an alternative to `--data-file` in the backward-comp
 
 | # | Issue | Severity | Status |
 |---|-------|----------|--------|
-| 1 | flume 0.10 spinlock CI deadlock | 🔴 Critical | Workaround, needs upstream |
+| 1 | flume 0.10 spinlock CI deadlock | 🔴 Critical | 🔔 **Needs mentor decision** — upstream PR? |
 | 2 | Integration tests silently skip | 🟡 Medium | Open — mentor input wanted |
 | 3 | Multiple DoraNode per output | 🔴 Critical (was) | ✅ Fixed |
 | 4 | Binary naming inconsistency | 🟡 Medium | ✅ Fixed |
 | 5 | Missing --inline-data | 🟡 Medium | ✅ Fixed |
 
-**Key question for mentor**: For Issue 1, should we file a PR against dora-rs/dora to migrate `TestingInput::Channel` from flume to `tokio::sync::mpsc`? Or is there a planned flume 0.11 migration that would address this?
+**🔔 Decision needed (Issue 1)**: Should we file a PR against `dora-rs/dora` to migrate `TestingInput::Channel` from flume to `tokio::sync::mpsc`? Or is there a planned flume 0.11 migration that would address this? If approved, this can be scoped as a Week 9–10 task.

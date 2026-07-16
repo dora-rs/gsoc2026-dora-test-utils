@@ -7,8 +7,8 @@ use arrow::array::{Array, Int64Array};
 use dora_node_api::{DoraNode, Event, MetadataParameters};
 
 fn main() -> eyre::Result<()> {
-    let (mut node, mut events) = DoraNode::init_from_env()
-        .map_err(|e| eyre::eyre!("classifier-node: {e}"))?;
+    let (mut node, mut events) =
+        DoraNode::init_from_env().map_err(|e| eyre::eyre!("classifier-node: {e}"))?;
 
     let threshold: i64 = std::env::var("CLASSIFIER_THRESHOLD")
         .ok()
@@ -31,9 +31,9 @@ fn main() -> eyre::Result<()> {
                     builder.append_value(val);
                     let output = builder.finish();
                     node.send_output(
-                        label.parse().map_err(|e| {
-                            eyre::eyre!("invalid output_id '{label}': {e}")
-                        })?,
+                        label
+                            .parse()
+                            .map_err(|e| eyre::eyre!("invalid output_id '{label}': {e}"))?,
                         MetadataParameters::default(),
                         output,
                     )
