@@ -48,8 +48,11 @@ jobs:
       # All tests now pass with default parallelism — flume→tokio mpsc
       # migration (dora-rs/dora#1603) eliminated the spinlock deadlock.
       - run: cargo test --lib
-      - run: cargo test --test e2e
-      - run: cargo test --test smoke
+      # e2e and smoke tests run NodeHarness which spawns daemon threads.
+      # Parallel execution (>2 threads) hits an intermittent deadlock on
+      # low-CPU CI runners — run them serially (only add ~3s per suite).
+      - run: cargo test --test e2e -- --test-threads=1
+      - run: cargo test --test smoke -- --test-threads=1
 
   clippy:
     name: cargo clippy
