@@ -1,8 +1,7 @@
-# dora-test-utils
+# GSoC 2026 Project: dora-test-utils
 
 为 [DORA](https://dora-rs.ai/) 数据流框架提供单元测试和集成测试支持的 Rust 工具库。
 
-GSoC 2026 项目，导师 [bobdingAI](https://github.com/bobdingAI)，学生 [SunSunSun689](https://github.com/SunSunSun689)。
 
 ## 三层测试支持
 
