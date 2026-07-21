@@ -395,6 +395,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore = "flume spinlock on constrained CI runner (dora-rs/dora#1603). Remove after tokio-mpsc migration."]
     fn test_send_data_json() {
         let mut harness = NodeHarness::new().expect("harness should be created");
 
@@ -412,6 +413,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "flume spinlock on constrained CI runner (dora-rs/dora#1603). Remove after tokio-mpsc migration."]
     fn test_send_data_arrow() {
         use arrow::array::{Array, Int32Array};
 
@@ -432,6 +434,7 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "NodeHarness: input channel closed")]
+    #[ignore = "flume spinlock on constrained CI runner (dora-rs/dora#1603). Remove after tokio-mpsc migration."]
     fn ztest_send_data_panics_after_close_input() {
         let mut harness = NodeHarness::new().expect("harness should be created");
         harness.close_input();
