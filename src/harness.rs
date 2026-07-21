@@ -154,6 +154,9 @@ impl NodeHarness {
             .expect("NodeHarness: input channel closed — close_input() was already called")
             .blocking_send(event)
             .expect("NodeHarness: input channel disconnected — node may have panicked");
+        // Force a context switch to let the daemon + event stream
+        // threads process the event before tick() blocks.
+        std::thread::sleep(std::time::Duration::from_millis(500));
     }
 
     /// Convenience: inject input data by ID.
@@ -256,6 +259,7 @@ impl NodeHarness {
         // Dropping the sender causes blocking_recv() to return None, the daemon
         // returns to its request loop, and our SendMessage becomes processable.
         self.close_input();
+        std::thread::sleep(std::time::Duration::from_millis(50));
 
         self.node.send_output(data_id, Default::default(), data)
     }
