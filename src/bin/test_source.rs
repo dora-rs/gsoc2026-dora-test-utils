@@ -76,7 +76,10 @@ fn main() {
             })
         } else if let Some(data_file) = &cli.data_file {
             let contents = std::fs::read_to_string(data_file).unwrap_or_else(|e| {
-                eprintln!("error: failed to read data file '{}': {e}", data_file.display());
+                eprintln!(
+                    "error: failed to read data file '{}': {e}",
+                    data_file.display()
+                );
                 std::process::exit(1);
             });
             serde_json::from_str(&contents).unwrap_or_else(|e| {
