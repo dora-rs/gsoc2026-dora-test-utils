@@ -982,7 +982,6 @@ dependencies = [
  "clap",
  "dora-node-api",
  "eyre",
- "flume 0.10.14",
  "serde",
  "serde_json",
  "serial_test",

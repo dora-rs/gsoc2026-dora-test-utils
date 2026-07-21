@@ -36,4 +36,4 @@ nodes:
     path: ../../target/debug/test-sink
     inputs:
       data_b: echo-b/data_b
-    args: "--expected-file tests/fixtures/classifier-expected-high.json --output-file result-b.json"
+    args: "--expected-file tests/fixtures/classifier-source-expected.json --output-file result-b.json"
