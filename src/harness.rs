@@ -378,7 +378,6 @@ mod tests {
     use super::*;
 
     #[test]
-    #[ignore = "needs CI environment with DORA daemon (dora-rs/dora#1603). Remove after verification."]
     fn test_send_data_json() {
         let mut harness = NodeHarness::new().expect("harness should be created");
 
@@ -396,7 +395,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "needs CI environment with DORA daemon (dora-rs/dora#1603). Remove after verification."]
     fn test_send_data_arrow() {
         use arrow::array::{Array, Int32Array};
 
@@ -417,7 +415,6 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "NodeHarness: input channel closed")]
-    #[ignore = "needs CI environment with DORA daemon (dora-rs/dora#1603). Remove after verification."]
     fn ztest_send_data_panics_after_close_input() {
         let mut harness = NodeHarness::new().expect("harness should be created");
         harness.close_input();

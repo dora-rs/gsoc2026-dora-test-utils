@@ -38,11 +38,10 @@ jobs:
           path: dora/target
           key: dora-target-${{ runner.os }}-${{ hashFiles('dora/**/*.rs', 'dora/**/Cargo.toml') }}
 
-      # Harness + E2E tests: ignored on CI due to flume spinlock deadlock
-      # on constrained (2-vCPU) runners (dora-rs/dora#1603).
-      # Re-enabled after tokio-mpsc migration.
-      - run: cargo test --lib -- --skip harness
-      - run: cargo test --test e2e -- --ignored || true
+      # All tests now pass with default parallelism — flume→tokio mpsc
+      # migration (dora-rs/dora#1603) eliminated the spinlock deadlock.
+      - run: cargo test --lib
+      - run: cargo test --test e2e
       - run: cargo test --test smoke
 
   clippy:

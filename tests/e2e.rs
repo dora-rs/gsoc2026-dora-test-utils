@@ -13,7 +13,6 @@ use dora_test_utils::NodeHarness;
 /// 3. Tick — receive Input, verify id and data present
 /// 4. Tick — receive Stop, verify stream ends
 #[test]
-#[ignore = "needs CI environment with DORA daemon (dora-rs/dora#1603). Remove after verification."]
 fn e2e_receive_input_and_stop() {
     let mut harness = NodeHarness::new().expect("NodeHarness::new should succeed");
 
@@ -53,7 +52,6 @@ fn e2e_receive_input_and_stop() {
 /// send_output() automatically calls close_input() to unblock the daemon
 /// thread, so the caller does not need to manage the input channel lifecycle.
 #[test]
-#[ignore = "needs CI environment with DORA daemon (dora-rs/dora#1603). Remove after verification."]
 fn e2e_send_output_and_recv() {
     let mut harness = NodeHarness::new().expect("NodeHarness::new should succeed");
 
@@ -88,7 +86,6 @@ fn e2e_send_output_and_recv() {
 /// run_to_completion() auto-injects a Stop event and auto-calls close_input(),
 /// so the caller only needs to send the inputs they want to test.
 #[test]
-#[ignore = "needs CI environment with DORA daemon (dora-rs/dora#1603). Remove after verification."]
 fn e2e_run_to_completion_returns_events() {
     let mut harness = NodeHarness::new().expect("NodeHarness::new should succeed");
 
@@ -129,7 +126,6 @@ fn e2e_run_to_completion_returns_events() {
 /// Verifies that both input and output paths work in the same harness
 /// lifecycle.  run_to_completion() auto-injects Stop and auto-closes input.
 #[test]
-#[ignore = "needs CI environment with DORA daemon (dora-rs/dora#1603). Remove after verification."]
 fn e2e_full_pipeline_input_to_output() {
     let mut harness = NodeHarness::new().expect("NodeHarness::new should succeed");
 
@@ -173,7 +169,6 @@ fn e2e_full_pipeline_input_to_output() {
 
 /// send_data with Arrow ArrayData: verify Arrow->JSON->Input round-trip.
 #[test]
-#[ignore = "needs CI environment with DORA daemon (dora-rs/dora#1603). Remove after verification."]
 fn e2e_send_data_arrow_input() {
     use arrow::array::{Array, Int32Array};
 
