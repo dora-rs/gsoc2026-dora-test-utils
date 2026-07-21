@@ -87,7 +87,7 @@
 //! | Component | Status |
 //! |-----------|--------|
 //! | [`NodeHarness`] (struct + `new()`) | Implemented — wraps [`DoraNode::init_testing()`][init] with live [`TestingInput::Channel`] + [`TestingOutput::ToChannel`] |
-//! | [`NodeHarness::send_input()`] | Implemented — pushes [`TimedIncomingEvent`] through live flume channel |
+//! | [`NodeHarness::send_input()`] | Implemented — pushes [`TimedIncomingEvent`] through live tokio mpsc channel |
 //! | [`NodeHarness::send_data()`] | Implemented — convenience: inject data by ID (accepts [`serde_json::Value`] and [`arrow::array::ArrayData`]) |
 //! | [`NodeHarness::send_stop()`] | Implemented — convenience wrapper around `send_input` for Stop events |
 //! | [`NodeHarness::send_output()`] | Implemented — delegates to [`DoraNode::send_output`]; safe after [`close_input`](NodeHarness::close_input) or [`run_to_completion`](NodeHarness::run_to_completion) |
@@ -111,10 +111,10 @@
 //! lacks — via a new [`TestingInput::Channel`] variant added upstream — and
 //! the output-capture + assertion helpers.
 //!
-//! The harness uses live [`flume`] channels for both directions: input events
-//! flow from test code to the node through [`TestingInput::Channel`]; outputs
-//! flow back through [`TestingOutput::ToChannel`].  No file I/O or daemon
-//! connection required.
+//! The harness uses live [`tokio::sync::mpsc`] channels for both directions:
+//! input events flow from test code to the node through
+//! [`TestingInput::Channel`]; outputs flow back through
+//! [`TestingOutput::ToChannel`].  No file I/O or daemon connection required.
 //!
 //! For pure-mock testing (no real node), the standalone mock types
 //! ([`MockEventStream`], [`MockOutputSender`]) use

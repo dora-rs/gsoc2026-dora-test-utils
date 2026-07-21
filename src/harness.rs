@@ -20,11 +20,11 @@
 //! ## Architecture
 //!
 //! ```text
-//! ┌──────────────────┐  flume channel (input)  ┌──────────────────┐
+//! ┌──────────────────┐  tokio mpsc (input)     ┌──────────────────┐
 //! │   Test code      │ ──────────────────────▶ │  DORA node       │
 //! │  send_input()    │                         │  (the thing      │
 //! │  tick()          │                         │   under test)    │
-//! │  recv_output() ◀─│── flume channel (output)─│                  │
+//! │  recv_output() ◀─│── tokio mpsc (output)───│                  │
 //! └──────────────────┘                         └──────────────────┘
 //! ```
 //!
@@ -74,7 +74,7 @@ pub struct NodeHarness {
     // ── Drop-order note ───────────────────────────────────────────
     // Rust drops struct fields in declaration order (top to bottom).
     // `input_tx` MUST be dropped before `event_stream` and `node`:
-    // dropping the sender disconnects the flume input channel, which
+    // dropping the sender disconnects the tokio mpsc input channel, which
     // unblocks the daemon thread's `rx.recv()`, allowing it to process
     // `EventStreamDropped` and `OutputsDone` during the subsequent
     // `event_stream`/`node` drops.
@@ -84,9 +84,9 @@ pub struct NodeHarness {
     /// Sender for runtime event injection.
     /// Wrapped in `Option` so [`close_input`](Self::close_input) can drop the sender
     /// to unblock the daemon thread, making [`send_output`](Self::send_output) safe.
-    pub(crate) input_tx: Option<flume::Sender<TimedIncomingEvent>>,
+    pub(crate) input_tx: Option<tokio::sync::mpsc::Sender<TimedIncomingEvent>>,
     /// Receiver for outputs captured via [`TestingOutput::ToChannel`].
-    pub(crate) output_rx: flume::Receiver<serde_json::Map<String, serde_json::Value>>,
+    pub(crate) output_rx: tokio::sync::mpsc::Receiver<serde_json::Map<String, serde_json::Value>>,
     /// Buffered outputs indexed by output ID (the `"id"` field in each
     /// JSON output map).
     pub(crate) output_buffers: HashMap<String, Vec<serde_json::Map<String, serde_json::Value>>>,
@@ -112,13 +112,13 @@ impl NodeHarness {
     /// [`DoraNode::init_testing`] call fails.
     pub fn new() -> Result<Self, NodeError> {
         // ── Input channel: runtime event injection ─────────────────
-        // Unbounded — test code controls pacing, so backpressure
-        // from the node side would only complicate test logic.
-        let (input_tx, input_rx) = flume::unbounded::<TimedIncomingEvent>();
+        // Bounded (large capacity) — test code controls pacing, and
+        // TestingInput::Channel requires tokio::sync::mpsc::Receiver.
+        let (input_tx, input_rx) = tokio::sync::mpsc::channel::<TimedIncomingEvent>(1024);
 
         // ── Output channel: capture real node outputs ──────────────
         let (output_tx, output_rx) =
-            flume::bounded::<serde_json::Map<String, serde_json::Value>>(256);
+            tokio::sync::mpsc::channel::<serde_json::Map<String, serde_json::Value>>(256);
 
         let inputs = TestingInput::Channel(input_rx);
         let outputs = TestingOutput::ToChannel(output_tx);
@@ -152,11 +152,8 @@ impl NodeHarness {
         self.input_tx
             .as_ref()
             .expect("NodeHarness: input channel closed — close_input() was already called")
-            .send(event)
+            .blocking_send(event)
             .expect("NodeHarness: input channel disconnected — node may have panicked");
-        // Force a context switch to let the daemon + event stream
-        // threads process the event before tick() blocks.
-        std::thread::sleep(std::time::Duration::from_millis(500));
     }
 
     /// Convenience: inject input data by ID.
@@ -219,8 +216,8 @@ impl NodeHarness {
     /// After calling this, no more inputs can be sent via
     /// [`send_input`](Self::send_input). But [`send_output`](Self::send_output)
     /// and [`recv_output`](Self::recv_output) become safe to call without
-    /// risk of deadlock — the daemon thread's `rx.recv()` returns
-    /// `Disconnected` and it resumes processing `DaemonRequest::SendMessage`.
+    /// risk of deadlock — the daemon thread's `rx.blocking_recv()` returns
+    /// `None` and it resumes processing `DaemonRequest::SendMessage`.
     ///
     /// [`run_to_completion`](Self::run_to_completion) calls this automatically
     /// after the event stream is exhausted.
@@ -255,18 +252,10 @@ impl NodeHarness {
             .map_err(|e| NodeError::Output(format!("invalid output_id '{output_id}': {e}")))?;
 
         // Close the input channel to unblock the daemon thread.  The daemon
-        // is single-threaded and blocks on `input_rx.recv()` while processing
-        // the eagerly-issued NextEvent request.  Dropping the sender causes
-        // `recv()` to return Disconnected, the daemon returns to its request
-        // loop, and our SendMessage becomes processable.
-        //
-        // The brief sleep forces a context switch so the daemon thread has
-        // time to unwind the NextEvent path before we enqueue SendMessage.
-        // Without this, the daemon may still be inside recv() when our
-        // blind oneshot reply wait starts, causing a permanent hang on
-        // resource-constrained CI runners.
+        // is single-threaded and blocks on NextEvent → rx.blocking_recv().
+        // Dropping the sender causes blocking_recv() to return None, the daemon
+        // returns to its request loop, and our SendMessage becomes processable.
         self.close_input();
-        std::thread::sleep(std::time::Duration::from_millis(50));
 
         self.node.send_output(data_id, Default::default(), data)
     }
@@ -353,7 +342,7 @@ impl NodeHarness {
 
     // ── private helpers ────────────────────────────────────────────
 
-    /// Collect all pending outputs from the flume channel into
+    /// Collect all pending outputs from the tokio::sync::mpsc channel into
     /// `output_buffers`, indexed by the `"id"` field in each JSON map.
     fn collect_pending_outputs(&mut self) {
         while let Ok(output) = self.output_rx.try_recv() {
@@ -376,17 +365,11 @@ impl NodeHarness {
 
 impl Drop for NodeHarness {
     fn drop(&mut self) {
-        // close_input() drops the flume sender in a background thread
-        // so the main thread never contends on flume 0.10's spinlock.
+        // close_input() drops the tokio mpsc sender, which disconnects
+        // the channel and causes the daemon thread's blocking_recv() to
+        // return None.  tokio::sync::mpsc uses std::sync::Mutex — no
+        // spinlock, so drop completes without deadlock.
         self.close_input();
-
-        // Give the background thread time to drop the sender, and the
-        // daemon time to process the disconnect and reply to the event
-        // stream thread.  On low-CPU CI runners this may take several
-        // scheduling quanta.  After the sleep, the daemon is back in
-        // its request loop (receiver.blocking_recv) and ready to
-        // process the cleanup requests sent during node drop.
-        std::thread::sleep(std::time::Duration::from_millis(500));
     }
 }
 
@@ -395,7 +378,7 @@ mod tests {
     use super::*;
 
     #[test]
-    #[ignore = "flume spinlock on constrained CI runner (dora-rs/dora#1603). Remove after tokio-mpsc migration."]
+    #[ignore = "needs CI environment with DORA daemon (dora-rs/dora#1603). Remove after verification."]
     fn test_send_data_json() {
         let mut harness = NodeHarness::new().expect("harness should be created");
 
@@ -413,7 +396,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "flume spinlock on constrained CI runner (dora-rs/dora#1603). Remove after tokio-mpsc migration."]
+    #[ignore = "needs CI environment with DORA daemon (dora-rs/dora#1603). Remove after verification."]
     fn test_send_data_arrow() {
         use arrow::array::{Array, Int32Array};
 
@@ -434,7 +417,7 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "NodeHarness: input channel closed")]
-    #[ignore = "flume spinlock on constrained CI runner (dora-rs/dora#1603). Remove after tokio-mpsc migration."]
+    #[ignore = "needs CI environment with DORA daemon (dora-rs/dora#1603). Remove after verification."]
     fn ztest_send_data_panics_after_close_input() {
         let mut harness = NodeHarness::new().expect("harness should be created");
         harness.close_input();

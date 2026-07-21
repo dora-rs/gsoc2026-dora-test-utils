@@ -31,11 +31,6 @@ arrow-json = "58"
 # Tokio: async runtime used by DORA and our harness.
 tokio = { version = "1", features = ["sync", "macros", "rt"] }
 
-# Flume: multi-producer single-consumer channel used by DORA's
-# TestingOutput::ToChannel for capturing real node outputs.
-# Pinned to match DORA's own flume version (0.10.14).
-flume = "0.10"
-
 # serde_json: DORA outputs are serialized as JSON maps in integration
 # testing mode; test code inspects them via serde_json::Value.
 serde_json = "1"
